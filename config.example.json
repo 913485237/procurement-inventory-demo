@@ -1,0 +1,10 @@
+{
+  "external_enabled": false,
+  "external_base_url": "https://api.openai.com/v1",
+  "external_api_key": "",
+  "external_model": "gpt-5-mini",
+  "ollama_enabled": true,
+  "ollama_base_url": "http://127.0.0.1:11434",
+  "ollama_model": "qwen3:8b",
+  "timeout_seconds": 2.5
+}

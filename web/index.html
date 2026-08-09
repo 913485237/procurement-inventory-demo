@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b1220">
+  <title>Aether AI · 智造经营中枢</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark"><i></i><i></i><i></i></span>
+        <span><strong>Aether</strong><small>AI NATIVE ERP</small></span>
+      </div>
+
+      <nav class="primary-nav" aria-label="主导航">
+        <p class="nav-caption">经营决策</p>
+        <button class="nav-item active" data-view="dashboard">
+          <svg viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z"/></svg>
+          <span>经营总览</span>
+        </button>
+        <button class="nav-item ai-nav" data-view="ai">
+          <svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5v1H5a3 3 0 0 0-3 3v5a3 3 0 0 0 3 3h1v2h2v-2h8v2h2v-2h1a3 3 0 0 0 3-3v-5a3 3 0 0 0-3-3h-2V7a5 5 0 0 0-5-5Zm-3 6V7a3 3 0 0 1 6 0v1H9Zm-2 5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm10 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z"/></svg>
+          <span>AI 指挥中心</span><em>AI</em>
+        </button>
+        <button class="nav-item" data-view="risk">
+          <svg viewBox="0 0 24 24"><path d="M12 2 1 21h22L12 2Zm0 5.6L18.1 19H5.9L12 7.6ZM11 11v4h2v-4h-2Zm0 5.5v2h2v-2h-2Z"/></svg>
+          <span>供应链风险</span><b id="risk-nav-count">1</b>
+        </button>
+
+        <p class="nav-caption">业务执行</p>
+        <button class="nav-item" data-view="business">
+          <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3V3Zm2 2v4h4V5H5Zm8-2h8v8h-8V3Zm2 2v4h4V5h-4ZM3 13h8v8H3v-8Zm2 2v4h4v-4H5Zm8-2h8v8h-8v-8Zm2 2v4h4v-4h-4Z"/></svg>
+          <span>业务工作台</span>
+        </button>
+        <button class="nav-item" data-view="approvals">
+          <svg viewBox="0 0 24 24"><path d="M19 3h-4.2A3 3 0 0 0 12 1a3 3 0 0 0-2.8 2H5a2 2 0 0 0-2 2v16h18V5a2 2 0 0 0-2-2Zm-7 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm-1 14-4-4 1.4-1.4 2.6 2.6 5.6-5.6L18 10l-7 7Z"/></svg>
+          <span>审批中心</span><b id="approval-nav-count">1</b>
+        </button>
+
+        <p class="nav-caption">系统治理</p>
+        <button class="nav-item" data-view="audit">
+          <svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5.1 3.4 9.9 8 11 4.6-1.1 8-5.9 8-11V5l-8-3Zm0 2.1 6 2.2V11c0 3.9-2.5 7.8-6 8.9-3.5-1.1-6-5-6-8.9V6.3l6-2.2Zm-1 4.4v4.1l3.5 2.1 1-1.7-2.5-1.5v-3h-2Z"/></svg>
+          <span>审计与设置</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-status">
+        <div class="pulse-dot"></div>
+        <div><strong id="sidebar-ai-mode">规则引擎在线</strong><small>业务系统运行正常</small></div>
+        <button class="icon-button" data-view="audit" aria-label="打开设置">⚙</button>
+      </div>
+    </aside>
+
+    <main class="main-shell">
+      <header class="topbar">
+        <div class="topbar-title">
+          <button class="mobile-menu" id="mobile-menu" aria-label="菜单">☰</button>
+          <div><span>AI 原生制造业 ERP</span><strong id="page-title">经营总览</strong></div>
+        </div>
+        <div class="topbar-actions">
+          <div class="global-search">
+            <svg viewBox="0 0 24 24"><path d="m21 20-4.35-4.35A7.5 7.5 0 1 0 15.2 17L20 21l1-1ZM5.5 11a5.5 5.5 0 1 1 11 0 5.5 5.5 0 0 1-11 0Z"/></svg>
+            <input id="global-search" placeholder="搜索订单、物料、客户…">
+            <kbd>⌘ K</kbd>
+          </div>
+          <div class="today-chip" id="today-chip"></div>
+          <button class="notification-button" aria-label="通知"><span>2</span>◌</button>
+          <div class="user-switcher">
+            <span class="user-avatar" id="user-avatar">林</span>
+            <select id="user-select" aria-label="切换演示角色"></select>
+            <span class="select-arrow">⌄</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="view active" id="view-dashboard">
+        <div class="page-heading">
+          <div><span class="eyebrow">EXECUTIVE OVERVIEW</span><h1>早上好，<span id="welcome-name">林澈</span></h1><p>这里是今天需要关注的经营变化与 AI 决策建议。</p></div>
+          <div class="heading-actions"><button class="button secondary" id="export-report">导出经营简报</button><button class="button primary" data-view="ai">让 AI 分析风险 <span>→</span></button></div>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card"><div class="metric-icon blue">¥</div><div class="metric-label">在手订单金额 <span class="trend up">↑ 12.8%</span></div><strong id="metric-order-amount">—</strong><small id="metric-order-count">—</small><div class="sparkline blue-line"></div></article>
+          <article class="metric-card danger-card"><div class="metric-icon red">!</div><div class="metric-label">供应链风险 <span class="trend danger">需处理</span></div><strong id="metric-risks">—</strong><small>1 项严重风险影响交付</small><div class="sparkline red-line"></div></article>
+          <article class="metric-card"><div class="metric-icon amber">✓</div><div class="metric-label">待审批任务 <span class="trend">实时</span></div><strong id="metric-approvals">—</strong><small>AI 与人工发起的业务动作</small><div class="sparkline amber-line"></div></article>
+          <article class="metric-card"><div class="metric-icon green">↗</div><div class="metric-label">本月准时交付率 <span class="trend up">↑ 2.4%</span></div><strong>94.6%</strong><small>目标 96%，仍需关注缺料订单</small><div class="sparkline green-line"></div></article>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="panel trend-panel">
+            <div class="panel-head"><div><span class="panel-kicker">经营趋势</span><h2>订单与交付表现</h2></div><div class="legend"><span><i class="legend-blue"></i>订单指数</span><span><i class="legend-green"></i>准时交付率</span></div></div>
+            <div class="trend-chart" id="trend-chart"></div>
+          </article>
+
+          <article class="panel risk-spotlight">
+            <div class="spotlight-top"><span class="severity">CRITICAL</span><span class="live-label"><i></i> AI 实时监测</span></div>
+            <h2>航空铝板库存缺口</h2>
+            <p>预计影响 3 张高优先级订单，最早交付节点仅剩 3 天。</p>
+            <div class="risk-numbers"><div><span>预计缺口</span><strong id="dash-shortage">520<small>kg</small></strong></div><div><span>受影响金额</span><strong>142.9<small>万</small></strong></div></div>
+            <button class="spotlight-action" data-view="risk">查看影响链与 AI 建议 <span>→</span></button>
+          </article>
+
+          <article class="panel orders-panel">
+            <div class="panel-head"><div><span class="panel-kicker">重点订单</span><h2>交付风险队列</h2></div><button class="text-button" data-view="business">查看全部 →</button></div>
+            <div class="table-wrap"><table><thead><tr><th>订单号</th><th>客户</th><th>交付日期</th><th>金额</th><th>优先级</th><th>状态</th></tr></thead><tbody id="dashboard-orders"></tbody></table></div>
+          </article>
+
+          <article class="panel ai-brief-panel">
+            <div class="ai-orb"><span></span></div><span class="panel-kicker light">AI MORNING BRIEF</span><h2>今日决策简报</h2><p>航空铝板缺口是当前首要风险。建议先锁定华东铝业 700kg 加急补货，同时联系 3 家受影响客户调整交付窗口。</p>
+            <ul><li><i>1</i>分析受影响订单与客户</li><li><i>2</i>生成可审批的补货方案</li><li><i>3</i>同步交付与财务动作</li></ul>
+            <button class="button luminous" data-command="分析航空铝板缺料风险和影响订单">进入 AI 指挥中心</button>
+          </article>
+        </div>
+      </section>
+
+      <section class="view ai-view" id="view-ai">
+        <div class="ai-grid-bg"></div>
+        <div class="ai-header">
+          <div><span class="eyebrow cyan">AI COMMAND CENTER</span><h1>让业务系统真正可被 AI 控制</h1><p>每个动作都经过权限继承、参数校验、风险判断与审计。</p></div>
+          <div class="provider-stack" id="provider-stack"></div>
+        </div>
+        <div class="command-layout">
+          <aside class="command-sidebar glass-panel">
+            <div class="identity-card"><div class="identity-top"><span class="user-avatar" id="ai-user-avatar">林</span><div><small>当前 AI 身份</small><strong id="ai-user-name">林澈</strong><span id="ai-user-role">数字化平台主管</span></div><i class="verified">✓</i></div><div class="identity-foot"><span>权限继承</span><b>与当前用户一致</b></div></div>
+            <div class="suggestion-group"><p>建议指令</p><button data-command="分析航空铝板缺料风险和影响订单"><i>⌁</i><span>分析缺料风险<small>追溯订单与关键客户</small></span></button><button data-command="生成航空铝板补货采购方案"><i>＋</i><span>生成补货方案<small>自动计算数量与供应商</small></span></button><button data-command="执行受影响订单的出货并开票"><i>↗</i><span>出货并开票<small>高风险 · 需要审批</small></span></button><button data-command="我是谁，AI 继承了哪些权限"><i>◎</i><span>查看身份权限<small>解释可做与不可做</small></span></button></div>
+            <div class="guard-card"><span class="guard-icon">◈</span><div><strong>System Guard</strong><small>所有 AI 动作受统一网关保护</small></div><span class="guard-online">ONLINE</span></div>
+          </aside>
+
+          <div class="conversation-panel glass-panel">
+            <div class="conversation-head"><div><span class="ai-mini-logo">A</span><div><strong>Aether Copilot</strong><small><i></i> 已连接业务上下文</small></div></div><button class="icon-button" id="clear-chat" aria-label="清空对话">↻</button></div>
+            <div class="messages" id="messages">
+              <div class="message assistant"><span class="message-avatar">A</span><div class="message-content"><span class="message-label">Aether Copilot</span><p>你好，我已继承当前用户的业务权限。可以帮你分析供应链风险、生成补货方案，或发起出货与开票审批。</p><div class="context-chips"><span>实时 ERP 数据</span><span>权限已验证</span><span>全程可审计</span></div></div></div>
+            </div>
+            <form class="command-box" id="command-form"><textarea id="command-input" rows="1" placeholder="输入业务目标，例如：分析缺料风险并生成补货方案"></textarea><div class="command-box-foot"><div><span>⌁ 实时业务上下文</span><span>盾 权限安全</span></div><button type="submit" id="send-command">发送 <kbd>↵</kbd></button></div></form>
+          </div>
+
+          <aside class="execution-panel glass-panel">
+            <div class="execution-head"><div><span class="status-ring"></span><div><small>实时执行轨迹</small><strong id="execution-title">等待业务指令</strong></div></div><span class="risk-pill low" id="execution-risk">LOW RISK</span></div>
+            <div class="execution-empty" id="execution-empty"><div class="radar"><i></i><i></i><i></i><span>AI</span></div><p>执行计划将在这里展开</p><small>动作、权限、风险与结果全程透明</small></div>
+            <div class="execution-content hidden" id="execution-content"><div class="step-list" id="plan-steps"></div><div class="provider-trail" id="provider-trail"></div><div class="execution-result" id="execution-result"></div></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="view-risk">
+        <div class="page-heading"><div><span class="eyebrow">SUPPLY CHAIN INTELLIGENCE</span><h1>供应链风险中心</h1><p>从风险信号到订单影响，用一条可解释链路完成判断。</p></div><button class="button primary" data-command="生成航空铝板补货采购方案">生成补货方案</button></div>
+        <div class="risk-banner"><div class="risk-banner-icon">!</div><div class="risk-banner-main"><span>原材料短缺预警 · CRITICAL</span><h2>航空铝板 6061-T6 库存预计不足</h2><p>风险编号 RM-202405 · AI 已完成全链路影响分析</p></div><div class="risk-banner-metrics"><div><span>预测缺口</span><strong id="risk-shortage">—</strong></div><div><span>受影响订单</span><strong id="risk-orders-count">—</strong></div><div><span>关键客户</span><strong id="risk-critical-count">—</strong></div></div></div>
+        <div class="risk-layout">
+          <article class="panel impact-panel"><div class="panel-head"><div><span class="panel-kicker">IMPACT GRAPH</span><h2>全链路影响追溯</h2></div><span class="live-label dark"><i></i> 数据实时计算</span></div><div class="impact-graph" id="impact-graph"></div></article>
+          <article class="panel explain-panel"><div class="panel-head"><div><span class="panel-kicker">EXPLAINABLE AI</span><h2>风险计算依据</h2></div></div><div id="risk-explanation"></div><div class="recommendation-box" id="risk-recommendation"></div></article>
+        </div>
+        <article class="panel affected-panel"><div class="panel-head"><div><span class="panel-kicker">AFFECTED ORDERS</span><h2>受影响订单与客户</h2></div><button class="text-button" data-command="生成航空铝板补货采购方案">交给 AI 处理 →</button></div><div class="table-wrap"><table><thead><tr><th>工单 / 订单</th><th>客户</th><th>客户等级</th><th>需求量</th><th>交付日期</th><th>优先级</th><th>订单金额</th></tr></thead><tbody id="risk-orders"></tbody></table></div></article>
+      </section>
+
+      <section class="view" id="view-business">
+        <div class="page-heading"><div><span class="eyebrow">BUSINESS WORKSPACE</span><h1>业务工作台</h1><p>统一查看采购、库存、订单、出货与发票。</p></div><button class="button primary" data-command="查看当前订单情况">用 AI 查询</button></div>
+        <div class="business-tabs" id="business-tabs"><button class="active" data-type="orders">销售订单</button><button data-type="materials">物料库存</button><button data-type="suppliers">供应商</button><button data-type="purchases">采购单</button><button data-type="shipments">出货单</button><button data-type="invoices">发票</button></div>
+        <article class="panel business-panel"><div class="business-tools"><div class="inline-search">⌕ <input id="business-search" placeholder="搜索当前列表"></div><div><button class="button tertiary">筛选</button><button class="button secondary">导出</button></div></div><div class="table-wrap business-table" id="business-table"></div></article>
+      </section>
+
+      <section class="view" id="view-approvals">
+        <div class="page-heading"><div><span class="eyebrow">HUMAN IN THE LOOP</span><h1>审批中心</h1><p>人类掌握最终决策权，AI 负责解释影响并执行。</p></div><div class="approval-summary"><span><i class="yellow-dot"></i><b id="pending-count">—</b> 待审批</span><span><i class="green-dot"></i><b id="completed-count">—</b> 已处理</span></div></div>
+        <div class="approval-list" id="approval-list"></div>
+      </section>
+
+      <section class="view" id="view-audit">
+        <div class="page-heading"><div><span class="eyebrow">GOVERNANCE & CONTROL</span><h1>审计与 AI 设置</h1><p>每条指令、权限判断与业务变更都有迹可循。</p></div><button class="button danger-outline" id="reset-demo">重置演示数据</button></div>
+        <div class="audit-layout">
+          <article class="panel audit-panel"><div class="panel-head"><div><span class="panel-kicker">AUDIT TRAIL</span><h2>全链路审计记录</h2></div><button class="text-button" id="refresh-audit">刷新</button></div><div class="audit-list" id="audit-list"></div></article>
+          <aside class="panel settings-panel"><div class="panel-head"><div><span class="panel-kicker">AI PROVIDERS</span><h2>模型与降级策略</h2></div></div><div id="settings-locked" class="settings-locked hidden"><span>🔒</span><h3>仅管理员可配置</h3><p>当前角色仍可查看审计记录。</p></div><form id="settings-form"><label class="toggle-row"><span><strong>外部 OpenAI 兼容接口</strong><small>优先使用云端或企业模型服务</small></span><input type="checkbox" id="external-enabled"><i></i></label><label>接口地址<input id="external-url" placeholder="https://api.openai.com/v1"></label><label>模型名称<input id="external-model" placeholder="gpt-5-mini"></label><label>API 密钥<input id="external-key" type="password" placeholder="留空则保持现有密钥"></label><label class="toggle-row"><span><strong>本地 Ollama</strong><small>外部接口不可用时自动尝试</small></span><input type="checkbox" id="ollama-enabled"><i></i></label><label>Ollama 地址<input id="ollama-url" placeholder="http://127.0.0.1:11434"></label><label>本地模型<input id="ollama-model" placeholder="qwen3:8b"></label><button class="button primary full" type="submit">保存 AI 设置</button><div class="fallback-chain"><span>外部 AI</span><i>→</i><span>本地 Ollama</span><i>→</i><span>规则引擎</span></div></form></aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast-stack" id="toast-stack"></div>
+  <div class="modal-backdrop hidden" id="approval-modal"><div class="modal"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">APPROVAL DECISION</span><h2 id="modal-title">审批业务动作</h2><div id="modal-body"></div><label class="modal-note">审批意见<textarea id="approval-note" placeholder="填写审批判断或执行说明"></textarea></label><div class="modal-actions"><button class="button secondary" data-close-modal>取消</button><button class="button danger-outline" id="reject-approval">驳回</button><button class="button primary" id="approve-approval">批准并执行</button></div></div></div>
+  <script src="/app.js"></script>
+</body>
+</html>

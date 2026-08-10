@@ -38,7 +38,7 @@ const state = {
   ],
   preferences: {
     fontSize: "standard",
-    theme: "mixed",
+    theme: "light",
     radius: "standard",
     compact: false,
     reducedMotion: false,
@@ -284,6 +284,7 @@ function applyPreferences() {
   const { fontSize, theme, radius, compact, reducedMotion, highContrast } = state.preferences;
   document.body.dataset.uiFont = fontSize;
   document.body.dataset.uiTheme = theme;
+  document.querySelector('meta[name="theme-color"]').content = theme === "dark" ? "#0b1220" : "#f5f7fa";
   document.body.dataset.uiRadius = radius;
   document.body.dataset.uiDensity = compact ? "compact" : "comfortable";
   document.body.dataset.uiMotion = reducedMotion ? "reduced" : "full";
@@ -294,7 +295,7 @@ function resetPreferences() {
   document.getElementById("preferences-form").reset();
   state.preferences = {
     fontSize: "standard",
-    theme: "mixed",
+    theme: "light",
     radius: "standard",
     compact: false,
     reducedMotion: false,

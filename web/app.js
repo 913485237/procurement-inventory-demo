@@ -571,7 +571,7 @@ function renderApprovalCard(item) {
       ? `<button class="button primary" data-approval-id="${item.id}">查看并审批</button><small>批准后由 AI 执行业务事务</small>`
       : `<span class="tag amber">等待管理员审批</span><small>当前角色可查看但无审批权</small>`
     : `<span class="tag ${item.status === "approved" ? "green" : "red"}">${item.status === "approved" ? "已批准并执行" : "已驳回"}</span><small>${escapeHtml(item.decision_note || "审批流程已结束")}</small>`;
-  return `<article class="approval-card ${item.status}"><div></div><div class="approval-main"><div class="approval-top"><div class="approval-title"><span class="approval-icon">${item.action_type.startsWith("purchase") ? "＋" : "↗"}</span><div><strong>${escapeHtml(item.action_label)}</strong><small>#${item.id} · ${escapeHtml(item.requester_name || "系统")} 发起 · ${formatDateTime(item.created_at)}</small></div></div><span class="tag red">HIGH RISK</span></div><p class="approval-reason">${escapeHtml(item.reason)}</p><div class="approval-data">${data}</div></div><div class="approval-actions">${actions}</div></article>`;
+  return `<article class="approval-card ${item.status}"><div class="approval-main"><div class="approval-top"><div class="approval-title"><span class="approval-icon">${item.action_type.startsWith("purchase") ? "＋" : "↗"}</span><div><strong>${escapeHtml(item.action_label)}</strong><small>#${item.id} · ${escapeHtml(item.requester_name || "系统")} 发起 · ${formatDateTime(item.created_at)}</small></div></div><span class="tag red">HIGH RISK</span></div><p class="approval-reason">${escapeHtml(item.reason)}</p><div class="approval-data">${data}</div></div><div class="approval-actions">${actions}</div></article>`;
 }
 
 function openApprovalModal(id) {

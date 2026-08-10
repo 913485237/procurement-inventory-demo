@@ -163,6 +163,7 @@ function updateCurrentUserUI() {
     element.textContent = user.name.slice(0, 1);
     element.style.background = user.avatar_color;
   });
+  document.getElementById("user-display").textContent = `${user.name} · ${user.title}`;
   document.getElementById("welcome-name").textContent = user.name;
   document.getElementById("ai-user-name").textContent = user.name;
   document.getElementById("ai-user-role").textContent = user.title;

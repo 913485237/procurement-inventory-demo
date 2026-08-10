@@ -8,6 +8,42 @@ const state = {
   approvals: [],
   selectedApproval: null,
   risk: null,
+  notifications: [
+    {
+      id: 1,
+      level: "critical",
+      title: "航空铝板库存低于安全线",
+      summary: "预计缺口 520kg，可能影响 3 张高优先级订单。",
+      time: "5 分钟前",
+      detail: "当前可用库存无法覆盖已排产需求，最早交付节点仅剩 3 天。",
+      impact: "影响智造科技、星河自动化与宏远装备，涉及订单金额约 142.9 万元。",
+      action: "查看供应链风险",
+      view: "risk",
+      unread: true,
+      expanded: false,
+    },
+    {
+      id: 2,
+      level: "warning",
+      title: "高优先级订单即将到达交付节点",
+      summary: "SO-202608-0208 距计划交付仅剩 2 天。",
+      time: "18 分钟前",
+      detail: "该订单当前处于生产中，需要确认缺料处置结果和最终出货窗口。",
+      impact: "客户等级为战略客户，订单金额 68.8 万元，延迟可能影响本月准时交付率。",
+      action: "前往业务工作台",
+      view: "business",
+      unread: true,
+      expanded: false,
+    },
+  ],
+  preferences: {
+    fontSize: "standard",
+    theme: "mixed",
+    radius: "standard",
+    compact: false,
+    reducedMotion: false,
+    highContrast: false,
+  },
 };
 
 const viewTitles = {
@@ -50,6 +86,8 @@ document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
   document.getElementById("today-chip").textContent = formatToday();
+  renderNotifications();
+  applyPreferences();
   bindEvents();
   try {
     const [{ users }, health] = await Promise.all([api("/api/users", { userless: true }), api("/api/health", { userless: true })]);
@@ -79,7 +117,18 @@ function bindEvents() {
       return;
     }
     if (event.target.closest("[data-close-modal]")) closeApprovalModal();
+    if (!event.target.closest("#preferences-panel") && !event.target.closest("#preferences-button")) closePreferences();
   });
+
+  document.getElementById("notification-button").addEventListener("click", toggleNotificationDrawer);
+  document.getElementById("notification-close").addEventListener("click", closeNotificationDrawer);
+  document.getElementById("notification-backdrop").addEventListener("click", closeNotificationDrawer);
+  document.getElementById("mark-all-read").addEventListener("click", markAllNotificationsRead);
+  document.getElementById("notification-list").addEventListener("click", handleNotificationClick);
+  document.getElementById("preferences-button").addEventListener("click", togglePreferences);
+  document.getElementById("preferences-close").addEventListener("click", closePreferences);
+  document.getElementById("preferences-form").addEventListener("change", updatePreferences);
+  document.getElementById("preferences-reset").addEventListener("click", resetPreferences);
 
   document.getElementById("user-select").addEventListener("change", async (event) => {
     state.userId = Number(event.target.value);
@@ -127,8 +176,132 @@ function bindEvents() {
       event.preventDefault();
       document.getElementById("global-search").focus();
     }
-    if (event.key === "Escape") closeApprovalModal();
+    if (event.key === "Escape") {
+      closeApprovalModal();
+      closeNotificationDrawer();
+      closePreferences();
+    }
   });
+}
+
+function renderNotifications() {
+  const unreadCount = state.notifications.filter((item) => item.unread).length;
+  const badge = document.getElementById("notification-count");
+  badge.textContent = unreadCount;
+  badge.classList.toggle("hidden", unreadCount === 0);
+  document.getElementById("notification-unread-label").textContent = `${unreadCount} 条未读`;
+  document.getElementById("mark-all-read").disabled = unreadCount === 0;
+  document.getElementById("notification-list").innerHTML = state.notifications.map((item) => `
+    <article class="notification-item ${item.unread ? "unread" : ""} ${item.expanded ? "expanded" : ""}">
+      <button class="notification-summary" data-notification-id="${item.id}" aria-expanded="${item.expanded}">
+        <i class="notification-level ${item.level}"></i>
+        <span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.summary)}</small><time>${escapeHtml(item.time)}</time></span>
+        <b>${item.expanded ? "⌃" : "⌄"}</b>
+      </button>
+      <div class="notification-detail" aria-hidden="${!item.expanded}">
+        <p>${escapeHtml(item.detail)}</p>
+        <div><span>影响范围</span><strong>${escapeHtml(item.impact)}</strong></div>
+        <button data-notification-view="${item.view}">${escapeHtml(item.action)} <span>→</span></button>
+      </div>
+    </article>
+  `).join("");
+}
+
+function handleNotificationClick(event) {
+  const action = event.target.closest("[data-notification-view]");
+  if (action) {
+    const view = action.dataset.notificationView;
+    if (!document.getElementById(`view-${view}`)) {
+      toast("目标业务页面暂不可用", "error");
+      return;
+    }
+    closeNotificationDrawer();
+    switchView(view);
+    return;
+  }
+  const toggle = event.target.closest("[data-notification-id]");
+  if (!toggle) return;
+  const item = state.notifications.find((notification) => notification.id === Number(toggle.dataset.notificationId));
+  if (!item) return;
+  item.expanded = !item.expanded;
+  item.unread = false;
+  renderNotifications();
+}
+
+function markAllNotificationsRead() {
+  state.notifications.forEach((item) => { item.unread = false; });
+  renderNotifications();
+}
+
+function toggleNotificationDrawer() {
+  const layer = document.getElementById("notification-layer");
+  setNotificationDrawer(!layer.classList.contains("open"));
+}
+
+function setNotificationDrawer(open) {
+  if (open) closePreferences();
+  const layer = document.getElementById("notification-layer");
+  layer.classList.toggle("open", open);
+  layer.setAttribute("aria-hidden", String(!open));
+  document.getElementById("notification-button").setAttribute("aria-expanded", String(open));
+}
+
+function closeNotificationDrawer() {
+  setNotificationDrawer(false);
+}
+
+function togglePreferences() {
+  const panel = document.getElementById("preferences-panel");
+  setPreferencesOpen(!panel.classList.contains("open"));
+}
+
+function setPreferencesOpen(open) {
+  if (open) closeNotificationDrawer();
+  const panel = document.getElementById("preferences-panel");
+  panel.classList.toggle("open", open);
+  panel.setAttribute("aria-hidden", String(!open));
+  document.getElementById("preferences-button").setAttribute("aria-expanded", String(open));
+}
+
+function closePreferences() {
+  setPreferencesOpen(false);
+}
+
+function updatePreferences() {
+  const form = document.getElementById("preferences-form");
+  state.preferences = {
+    fontSize: form.elements.fontSize.value,
+    theme: form.elements.theme.value,
+    radius: form.elements.radius.value,
+    compact: form.elements.compact.checked,
+    reducedMotion: form.elements.reducedMotion.checked,
+    highContrast: form.elements.highContrast.checked,
+  };
+  applyPreferences();
+}
+
+function applyPreferences() {
+  const { fontSize, theme, radius, compact, reducedMotion, highContrast } = state.preferences;
+  document.body.dataset.uiFont = fontSize;
+  document.body.dataset.uiTheme = theme;
+  document.body.dataset.uiRadius = radius;
+  document.body.dataset.uiDensity = compact ? "compact" : "comfortable";
+  document.body.dataset.uiMotion = reducedMotion ? "reduced" : "full";
+  document.body.dataset.uiContrast = highContrast ? "high" : "standard";
+}
+
+function resetPreferences() {
+  document.getElementById("preferences-form").reset();
+  state.preferences = {
+    fontSize: "standard",
+    theme: "mixed",
+    radius: "standard",
+    compact: false,
+    reducedMotion: false,
+    highContrast: false,
+  };
+  applyPreferences();
+  toast("个性化设置已恢复默认");
 }
 
 async function api(path, options = {}) {

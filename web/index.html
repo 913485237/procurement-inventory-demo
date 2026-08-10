@@ -50,7 +50,7 @@
       <div class="sidebar-status">
         <div class="pulse-dot"></div>
         <div><strong id="sidebar-ai-mode">规则引擎在线</strong><small>业务系统运行正常</small></div>
-        <button class="icon-button" data-view="audit" aria-label="打开设置">⚙</button>
+        <button class="icon-button" id="preferences-button" aria-label="打开个性化设置" aria-expanded="false" aria-controls="preferences-panel">⚙</button>
       </div>
     </aside>
 
@@ -67,7 +67,7 @@
             <kbd>⌘ K</kbd>
           </div>
           <div class="today-chip" id="today-chip"></div>
-          <button class="notification-button" aria-label="通知"><span>2</span>◌</button>
+          <button class="notification-button" id="notification-button" aria-label="打开通知中心" aria-expanded="false" aria-controls="notification-drawer"><span id="notification-count">2</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Zm-8.4 11a2.5 2.5 0 0 0 4.8 0H9.6Z"/></svg></button>
           <div class="user-switcher">
             <span class="user-avatar" id="user-avatar">林</span>
             <span class="user-display" id="user-display">林澈 · 数字化平台主管</span>
@@ -176,6 +176,33 @@
       </section>
     </main>
   </div>
+
+  <div class="notification-layer" id="notification-layer" aria-hidden="true">
+    <button class="notification-backdrop" id="notification-backdrop" aria-label="关闭通知中心"></button>
+    <aside class="notification-drawer" id="notification-drawer" aria-label="通知中心">
+      <div class="drawer-head">
+        <div><span class="panel-kicker">NOTIFICATIONS</span><h2>通知中心 <small id="notification-unread-label">2 条未读</small></h2></div>
+        <button class="panel-close" id="notification-close" aria-label="关闭通知中心">×</button>
+      </div>
+      <div class="drawer-toolbar"><span>业务提醒</span><button id="mark-all-read">全部已读</button></div>
+      <div class="notification-list" id="notification-list"></div>
+    </aside>
+  </div>
+
+  <aside class="preferences-popover" id="preferences-panel" aria-label="个性化设置" aria-hidden="true">
+    <div class="preferences-head"><div><span class="panel-kicker">APPEARANCE</span><h2>个性化设置</h2></div><button class="panel-close" id="preferences-close" aria-label="关闭个性化设置">×</button></div>
+    <form id="preferences-form">
+      <fieldset class="preference-group"><legend>字体大小</legend><div class="preference-options three"><label><input type="radio" name="fontSize" value="small"><span>小</span></label><label><input type="radio" name="fontSize" value="standard" checked><span>标准</span></label><label><input type="radio" name="fontSize" value="large"><span>大</span></label></div></fieldset>
+      <fieldset class="preference-group"><legend>界面风格</legend><div class="preference-options three theme-options"><label><input type="radio" name="theme" value="light"><span><i class="theme-dot light"></i>浅色</span></label><label><input type="radio" name="theme" value="mixed" checked><span><i class="theme-dot mixed"></i>混合</span></label><label><input type="radio" name="theme" value="dark"><span><i class="theme-dot dark"></i>深色</span></label></div></fieldset>
+      <fieldset class="preference-group"><legend>圆角大小</legend><div class="preference-options three"><label><input type="radio" name="radius" value="sharp"><span>直角</span></label><label><input type="radio" name="radius" value="standard" checked><span>标准</span></label><label><input type="radio" name="radius" value="rounded"><span>圆润</span></label></div></fieldset>
+      <div class="preference-switches">
+        <label class="preference-switch"><span><strong>紧凑布局</strong><small>缩小页面间距与控件高度</small></span><input type="checkbox" name="compact"><i></i></label>
+        <label class="preference-switch"><span><strong>减少动画</strong><small>关闭滑入和悬停位移动画</small></span><input type="checkbox" name="reducedMotion"><i></i></label>
+        <label class="preference-switch"><span><strong>高对比度</strong><small>增强文字与边框辨识度</small></span><input type="checkbox" name="highContrast"><i></i></label>
+      </div>
+      <button class="preferences-reset" id="preferences-reset" type="button">恢复默认设置</button>
+    </form>
+  </aside>
 
   <div class="toast-stack" id="toast-stack"></div>
   <div class="modal-backdrop hidden" id="approval-modal"><div class="modal"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">APPROVAL DECISION</span><h2 id="modal-title">审批业务动作</h2><div id="modal-body"></div><label class="modal-note">审批意见<textarea id="approval-note" placeholder="填写审批判断或执行说明"></textarea></label><div class="modal-actions"><button class="button secondary" data-close-modal>取消</button><button class="button danger-outline" id="reject-approval">驳回</button><button class="button primary" id="approve-approval">批准并执行</button></div></div></div>

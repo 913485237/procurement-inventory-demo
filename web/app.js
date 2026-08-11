@@ -8,6 +8,9 @@ const state = {
   businessDetailRequest: 0,
   selectedBusinessDetail: null,
   businessDetailTrigger: null,
+  dashboardTrend: [],
+  dashboardTrendIndex: null,
+  dashboardTrendTrigger: null,
   approvals: [],
   selectedApproval: null,
   risk: null,
@@ -137,6 +140,11 @@ function bindEvents() {
       switchView(viewTarget.dataset.view);
       return;
     }
+    const dashboardTarget = event.target.closest("[data-dashboard-target]");
+    if (dashboardTarget) {
+      navigateFromDashboard(dashboardTarget.dataset.dashboardTarget);
+      return;
+    }
     if (event.target.closest("[data-close-modal]")) closeApprovalModal();
     if (!event.target.closest("#preferences-panel") && !event.target.closest("#preferences-button")) closePreferences();
   });
@@ -173,9 +181,7 @@ function bindEvents() {
   document.getElementById("business-tabs").addEventListener("click", (event) => {
     const button = event.target.closest("button[data-type]");
     if (!button) return;
-    document.querySelectorAll("#business-tabs button").forEach((item) => item.classList.toggle("active", item === button));
-    state.businessType = button.dataset.type;
-    loadBusiness();
+    selectBusinessType(button.dataset.type);
   });
   document.getElementById("business-search").addEventListener("input", filterBusinessTable);
   document.getElementById("business-table").addEventListener("click", (event) => {
@@ -192,6 +198,26 @@ function bindEvents() {
   document.getElementById("business-detail-modal").addEventListener("click", (event) => {
     if (event.target === event.currentTarget || event.target.closest("[data-close-business-detail]")) closeBusinessDetail();
   });
+  document.getElementById("trend-chart").addEventListener("click", (event) => {
+    const column = event.target.closest("[data-trend-index]");
+    if (column) openDashboardTrend(Number(column.dataset.trendIndex), column);
+  });
+  document.getElementById("trend-chart").addEventListener("keydown", (event) => {
+    const column = event.target.closest("[data-trend-index]");
+    if (column && ["Enter", " "].includes(event.key)) {
+      event.preventDefault();
+      openDashboardTrend(Number(column.dataset.trendIndex), column);
+    }
+  });
+  document.getElementById("dashboard-trend-modal").addEventListener("click", (event) => {
+    const destination = event.target.closest("[data-trend-destination]");
+    if (destination) {
+      closeDashboardTrend({ restoreFocus: false });
+      navigateFromDashboard(destination.dataset.trendDestination);
+      return;
+    }
+    if (event.target === event.currentTarget || event.target.closest("[data-close-dashboard-trend]")) closeDashboardTrend();
+  });
   document.getElementById("settings-form").addEventListener("submit", saveSettings);
   document.getElementById("refresh-audit").addEventListener("click", loadAudit);
   document.getElementById("reset-demo").addEventListener("click", resetDemo);
@@ -207,6 +233,12 @@ function bindEvents() {
   });
   document.getElementById("export-report").addEventListener("click", exportBrief);
   document.addEventListener("keydown", (event) => {
+    const dashboardTarget = event.target.closest("[data-dashboard-target]");
+    if (dashboardTarget && ["Enter", " "].includes(event.key)) {
+      event.preventDefault();
+      navigateFromDashboard(dashboardTarget.dataset.dashboardTarget);
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       document.getElementById("global-search").focus();
@@ -214,6 +246,7 @@ function bindEvents() {
     if (event.key === "Escape") {
       closeApprovalModal();
       closeBusinessDetail();
+      closeDashboardTrend();
       closeNotificationDrawer();
       closePreferences();
     }
@@ -380,6 +413,7 @@ function updateCurrentUserUI() {
 }
 
 function switchView(view) {
+  closeDashboardTrend({ restoreFocus: false });
   state.activeView = view;
   document.querySelectorAll(".view").forEach((element) => element.classList.toggle("active", element.id === `view-${view}`));
   document.querySelectorAll(".nav-item").forEach((element) => element.classList.toggle("active", element.dataset.view === view));
@@ -387,6 +421,31 @@ function switchView(view) {
   document.querySelector(".sidebar").classList.remove("open");
   window.scrollTo({ top: 0, behavior: "smooth" });
   loadView(view);
+}
+
+function selectBusinessType(type, { load = true } = {}) {
+  const button = document.querySelector(`#business-tabs button[data-type="${type}"]`);
+  if (!button) {
+    toast("未找到对应的业务模块", "error");
+    return false;
+  }
+  document.querySelectorAll("#business-tabs button").forEach((item) => item.classList.toggle("active", item === button));
+  state.businessType = type;
+  if (load) loadBusiness();
+  return true;
+}
+
+function navigateFromDashboard(target) {
+  if (["orders", "shipments"].includes(target)) {
+    if (!selectBusinessType(target, { load: false })) return;
+    switchView("business");
+    return;
+  }
+  if (["risk", "approvals"].includes(target)) {
+    switchView(target);
+    return;
+  }
+  toast("暂时无法打开对应内容", "error");
 }
 
 async function loadView(view) {
@@ -410,13 +469,73 @@ async function loadDashboard() {
   document.getElementById("metric-approvals").textContent = `${metrics.pending_approvals} 项`;
   document.getElementById("risk-nav-count").textContent = metrics.active_risks;
   document.getElementById("approval-nav-count").textContent = metrics.pending_approvals;
-  document.getElementById("trend-chart").innerHTML = data.trend.map((item) => `
-    <div class="trend-column"><i style="height:${item.orders}%"></i><i style="height:${item.delivery}%"></i><span>${escapeHtml(item.month)}</span></div>
-  `).join("");
+  state.dashboardTrend = Array.isArray(data.trend) ? data.trend : [];
+  document.getElementById("trend-chart").innerHTML = state.dashboardTrend.length ? state.dashboardTrend.map((item, index) => {
+    const month = item.month || `第 ${index + 1} 期`;
+    const orders = trendNumber(item.orders);
+    const delivery = trendNumber(item.delivery);
+    const label = `${month}，订单指数${orders === null ? "暂无数据" : number(orders)}，准时交付率${delivery === null ? "暂无数据" : `${number(delivery)}%`}，打开月度详情`;
+    return `<div class="trend-column" role="button" tabindex="0" data-trend-index="${index}" aria-label="${escapeHtml(label)}"><i class="${orders === null ? "is-empty" : ""}" style="height:${trendBarHeight(orders)}%" aria-hidden="true"></i><i class="${delivery === null ? "is-empty" : ""}" style="height:${trendBarHeight(delivery)}%" aria-hidden="true"></i><span>${escapeHtml(month)}</span></div>`;
+  }).join("") : `<div class="trend-chart-empty">暂无趋势数据</div>`;
   document.getElementById("dashboard-orders").innerHTML = data.orders.slice(0, 4).map((order) => `
     <tr><td><strong>${escapeHtml(order.order_number)}</strong></td><td>${escapeHtml(order.customer_name)}</td><td>${escapeHtml(order.due_date)}</td>
     <td>${formatMoney(order.total_amount)}</td><td>${priorityTag(order.priority)}</td><td>${statusTag(order.status)}</td></tr>
   `).join("");
+}
+
+function trendNumber(value) {
+  const parsed = Number(value);
+  return value === null || value === undefined || value === "" || !Number.isFinite(parsed) ? null : parsed;
+}
+
+function trendBarHeight(value) {
+  return value === null ? 0 : Math.max(0, Math.min(100, value));
+}
+
+function trendComparison(currentValue, previousValue, suffix = "") {
+  const current = trendNumber(currentValue);
+  const previous = trendNumber(previousValue);
+  if (current === null) return `<span class="dashboard-trend-delta muted">暂无数据</span>`;
+  if (previous === null) return `<span class="dashboard-trend-delta muted">暂无上月数据</span>`;
+  const delta = Number((current - previous).toFixed(1));
+  const direction = delta > 0 ? "up" : delta < 0 ? "down" : "neutral";
+  const symbol = delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
+  return `<span class="dashboard-trend-delta ${direction}">较上月 ${symbol} ${number(Math.abs(delta))}${suffix}</span>`;
+}
+
+function openDashboardTrend(index, trigger) {
+  const item = state.dashboardTrend[index];
+  if (!item) {
+    toast("该月份暂无可查看的数据", "error");
+    return;
+  }
+  const previous = index > 0 ? state.dashboardTrend[index - 1] : null;
+  const month = item.month || `第 ${index + 1} 期`;
+  const orders = trendNumber(item.orders);
+  const delivery = trendNumber(item.delivery);
+  state.dashboardTrendIndex = index;
+  state.dashboardTrendTrigger = trigger;
+  document.getElementById("dashboard-trend-title").textContent = `${month}经营详情`;
+  document.getElementById("dashboard-trend-subtitle").textContent = "订单与交付月度汇总";
+  document.getElementById("dashboard-trend-period").textContent = month;
+  document.getElementById("dashboard-trend-summary").innerHTML = `
+    <article class="dashboard-trend-metric orders"><span>订单指数</span><strong>${orders === null ? "暂无数据" : number(orders)}</strong>${trendComparison(orders, previous?.orders)}</article>
+    <article class="dashboard-trend-metric delivery"><span>准时交付率</span><strong>${delivery === null ? "暂无数据" : `${number(delivery)}%`}</strong>${trendComparison(delivery, previous?.delivery, "%")}</article>`;
+  const modal = document.getElementById("dashboard-trend-modal");
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  modal.querySelector(".modal-close").focus();
+}
+
+function closeDashboardTrend({ restoreFocus = true } = {}) {
+  const modal = document.getElementById("dashboard-trend-modal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  state.dashboardTrendIndex = null;
+  const trigger = state.dashboardTrendTrigger;
+  state.dashboardTrendTrigger = null;
+  if (restoreFocus && trigger?.isConnected) trigger.focus();
 }
 
 async function loadRisk() {

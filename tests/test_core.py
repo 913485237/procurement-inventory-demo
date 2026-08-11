@@ -8,7 +8,7 @@ from pathlib import Path
 from backend.auth import PermissionDenied, get_user
 from backend.db import Database, json_value, utc_now_text
 from backend.erp import create_approval, decide_approval, list_approvals
-from backend.risk import analyze_material_risk, dashboard_data
+from backend.risk import analyze_material_risk, dashboard_data, order_detail
 
 
 class CoreWorkflowTest(unittest.TestCase):
@@ -28,6 +28,19 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(result["metrics"]["incoming"], 240)
         self.assertEqual(result["metrics"]["shortage"], 520)
         self.assertEqual(len(result["explanation"]), 3)
+
+    def test_order_detail_aggregates_fulfillment_and_production(self) -> None:
+        detail = order_detail(self.db, 4)
+        self.assertEqual(detail["order"]["order_number"], "SO-202608-0226")
+        self.assertEqual(detail["items"][0]["product_name"], "控制柜 C2")
+        self.assertEqual(detail["production_tasks"][0]["task_number"], "WO-202608-20444")
+        self.assertEqual(detail["shipments"][0]["shipment_number"], "SHP-202608-0096")
+        self.assertEqual(detail["invoices"], [])
+        self.assertEqual(detail["risks"], [])
+
+    def test_order_detail_rejects_unknown_order(self) -> None:
+        with self.assertRaisesRegex(ValueError, "未找到订单"):
+            order_detail(self.db, 999)
 
     def test_replenishment_requires_and_executes_approval(self) -> None:
         request = create_approval(

@@ -5,6 +5,9 @@ const state = {
   activeView: "dashboard",
   businessType: "orders",
   businessItems: [],
+  orderDetailRequest: 0,
+  selectedOrderId: null,
+  orderDetailTrigger: null,
   approvals: [],
   selectedApproval: null,
   risk: null,
@@ -157,6 +160,20 @@ function bindEvents() {
     loadBusiness();
   });
   document.getElementById("business-search").addEventListener("input", filterBusinessTable);
+  document.getElementById("business-table").addEventListener("click", (event) => {
+    const row = event.target.closest("tr[data-order-id]");
+    if (row) openOrderDetail(Number(row.dataset.orderId), row);
+  });
+  document.getElementById("business-table").addEventListener("keydown", (event) => {
+    const row = event.target.closest("tr[data-order-id]");
+    if (row && ["Enter", " "].includes(event.key)) {
+      event.preventDefault();
+      openOrderDetail(Number(row.dataset.orderId), row);
+    }
+  });
+  document.getElementById("order-detail-modal").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget || event.target.closest("[data-close-order-detail]")) closeOrderDetail();
+  });
   document.getElementById("settings-form").addEventListener("submit", saveSettings);
   document.getElementById("refresh-audit").addEventListener("click", loadAudit);
   document.getElementById("reset-demo").addEventListener("click", resetDemo);
@@ -178,6 +195,7 @@ function bindEvents() {
     }
     if (event.key === "Escape") {
       closeApprovalModal();
+      closeOrderDetail();
       closeNotificationDrawer();
       closePreferences();
     }
@@ -541,8 +559,21 @@ function renderBusinessTable() {
     document.getElementById("business-table").innerHTML = `<div class="empty-state"><div><span>◇</span><strong>暂无业务数据</strong></div></div>`;
     return;
   }
-  document.getElementById("business-table").innerHTML = `<table><thead><tr>${columns.map(([, label]) => `<th>${label}</th>`).join("")}</tr></thead><tbody>${items.map((item) => `<tr>${columns.map(([key,, type]) => `<td>${formatCell(item[key], type)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  document.getElementById("business-table").innerHTML = `<table><thead><tr>${columns.map(([, label]) => `<th>${label}</th>`).join("")}</tr></thead><tbody>${items.map((item) => {
+    const interactive = state.businessType === "orders"
+      ? ` class="order-row" data-order-id="${Number(item.id)}" tabindex="0" role="button" aria-label="查看订单 ${escapeHtml(item.order_number)} 详情"`
+      : "";
+    return `<tr${interactive}>${columns.map(([key,, type]) => `<td>${formatBusinessCell(item, key, type)}</td>`).join("")}</tr>`;
+  }).join("")}</tbody></table>`;
   filterBusinessTable();
+}
+
+function formatBusinessCell(item, key, type) {
+  const value = formatCell(item[key], type);
+  if (state.businessType === "orders" && ["order_number", "customer_name"].includes(key)) {
+    return `<span class="order-cell-link">${value}</span>`;
+  }
+  return value;
 }
 
 function filterBusinessTable() {
@@ -550,6 +581,85 @@ function filterBusinessTable() {
   document.querySelectorAll("#business-table tbody tr").forEach((row) => {
     row.style.display = !term || row.textContent.toLowerCase().includes(term) ? "" : "none";
   });
+}
+
+async function openOrderDetail(orderId, trigger = null) {
+  const modal = document.getElementById("order-detail-modal");
+  const body = document.getElementById("order-detail-body");
+  const listItem = state.businessItems.find((item) => item.id === orderId);
+  const requestId = ++state.orderDetailRequest;
+  state.selectedOrderId = orderId;
+  state.orderDetailTrigger = trigger;
+  document.getElementById("order-detail-title").textContent = listItem?.order_number || "订单详情";
+  document.getElementById("order-detail-subtitle").textContent = listItem
+    ? `${listItem.customer_name} · ${listItem.customer_tier}`
+    : "正在读取订单信息";
+  body.innerHTML = `<div class="order-detail-loading"><span></span><strong>正在读取完整订单信息</strong><small>同步产品、生产、履约与风险数据</small></div>`;
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  modal.querySelector(".modal-close").focus();
+  try {
+    const detail = await api(`/api/orders/${orderId}`);
+    if (requestId !== state.orderDetailRequest || state.selectedOrderId !== orderId) return;
+    renderOrderDetail(detail);
+  } catch (error) {
+    if (requestId !== state.orderDetailRequest) return;
+    body.innerHTML = `<div class="order-detail-error"><span>!</span><strong>订单详情读取失败</strong><p>${escapeHtml(error.message)}</p><button class="button secondary" data-close-order-detail>关闭</button></div>`;
+  }
+}
+
+function closeOrderDetail() {
+  const modal = document.getElementById("order-detail-modal");
+  if (modal.classList.contains("hidden")) return;
+  state.orderDetailRequest += 1;
+  state.selectedOrderId = null;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  const trigger = state.orderDetailTrigger;
+  state.orderDetailTrigger = null;
+  if (trigger?.isConnected) trigger.focus();
+}
+
+function renderOrderDetail(detail) {
+  const { order, items, production_tasks: tasks, shipments, invoices, risks } = detail;
+  document.getElementById("order-detail-title").textContent = order.order_number;
+  document.getElementById("order-detail-subtitle").textContent = `${order.customer_name} · ${order.customer_tier}`;
+  const itemRows = items.map((item) => `
+    <tr><td><strong>${escapeHtml(item.product_name)}</strong><small>${number(item.quantity)} 件</small></td><td><strong>${escapeHtml(item.material_name)}</strong><small>${escapeHtml(item.material_code)} · ${escapeHtml(item.material_specification)}</small></td><td>${number(item.material_qty_per_unit)} ${escapeHtml(item.material_unit)}</td><td><strong>${number(item.required_material_qty)} ${escapeHtml(item.material_unit)}</strong></td></tr>
+  `).join("");
+  const taskCards = tasks.map((task) => {
+    const progress = task.required_qty ? Math.min(100, Math.round(task.completed_qty / task.required_qty * 100)) : 0;
+    return `<article class="order-progress-card"><div><span>${escapeHtml(task.task_number)}</span>${statusTag(task.status)}</div><strong>${escapeHtml(task.material_name)} · ${escapeHtml(task.material_code)}</strong><p><span>完成 ${number(task.completed_qty)} / ${number(task.required_qty)} ${escapeHtml(task.material_unit)}</span><b>${progress}%</b></p><div class="order-progress-track"><i style="width:${progress}%"></i></div></article>`;
+  }).join("");
+  const shipmentCards = shipments.map((item) => `<div class="fulfillment-record"><span>出货单</span><strong>${escapeHtml(item.shipment_number)}</strong><small>${statusTag(item.status)} ${formatDateTime(item.shipped_at)}</small></div>`).join("");
+  const invoiceCards = invoices.map((item) => `<div class="fulfillment-record"><span>发票</span><strong>${escapeHtml(item.invoice_number)}</strong><small>${statusTag(item.status)} ${formatMoney(item.amount)} · ${formatDateTime(item.created_at)}</small></div>`).join("");
+  const riskCards = risks.map((risk) => `<article class="order-risk-record"><div><span>${escapeHtml(risk.event_code)} · ${escapeHtml(risk.severity)}</span>${statusTag(risk.status)}</div><strong>${escapeHtml(risk.material_name)}存在${escapeHtml(risk.event_type)}</strong><p>${escapeHtml(risk.description)}</p><small>预计缺口 ${number(risk.shortage_qty)} ${escapeHtml(risk.material_unit)} · ${formatDateTime(risk.created_at)}</small></article>`).join("");
+
+  document.getElementById("order-detail-body").innerHTML = `
+    <div class="order-detail-hero"><div><span>订单金额</span><strong>${formatMoney(order.total_amount)}</strong></div><div><span>当前状态</span>${statusTag(order.status)}</div><div><span>优先级</span>${priorityTag(order.priority)}</div><div><span>交付节点</span><strong>${escapeHtml(order.due_date)}</strong><small>${dueDateStatus(order.due_date)}</small></div></div>
+    <div class="order-detail-grid">
+      <section class="order-detail-section"><div class="order-detail-section-head"><span>ORDER</span><h3>订单信息</h3></div><dl class="order-detail-fields"><div><dt>订单编号</dt><dd>${escapeHtml(order.order_number)}</dd></div><div><dt>创建时间</dt><dd>${formatDateTime(order.created_at)}</dd></div><div><dt>交付日期</dt><dd>${escapeHtml(order.due_date)}</dd></div><div><dt>订单状态</dt><dd>${escapeHtml(order.status)}</dd></div></dl></section>
+      <section class="order-detail-section"><div class="order-detail-section-head"><span>CUSTOMER</span><h3>客户信息</h3></div><dl class="order-detail-fields"><div><dt>客户编码</dt><dd>${escapeHtml(order.customer_code)}</dd></div><div><dt>客户名称</dt><dd>${escapeHtml(order.customer_name)}</dd></div><div><dt>客户等级</dt><dd>${escapeHtml(order.customer_tier)}</dd></div><div><dt>所属行业</dt><dd>${escapeHtml(order.customer_industry)}</dd></div><div class="wide"><dt>业务联系人</dt><dd>${escapeHtml(order.customer_contact)}</dd></div></dl></section>
+    </div>
+    <section class="order-detail-section"><div class="order-detail-section-head"><span>ITEMS & MATERIALS</span><h3>产品与物料</h3></div><div class="order-detail-table"><table><thead><tr><th>产品</th><th>关联物料</th><th>单位用量</th><th>需求总量</th></tr></thead><tbody>${itemRows || `<tr><td colspan="4">暂无产品明细</td></tr>`}</tbody></table></div></section>
+    <section class="order-detail-section"><div class="order-detail-section-head"><span>PRODUCTION</span><h3>生产进度</h3></div><div class="order-progress-list">${taskCards || detailEmpty("暂无生产任务")}</div></section>
+    <div class="order-detail-grid">
+      <section class="order-detail-section"><div class="order-detail-section-head"><span>FULFILLMENT</span><h3>出货与发票</h3></div><div class="fulfillment-list">${shipmentCards || detailEmpty("暂无出货记录")}${invoiceCards || detailEmpty("暂无发票记录")}</div></section>
+      <section class="order-detail-section"><div class="order-detail-section-head"><span>RISK</span><h3>关联风险</h3></div><div class="order-risk-list">${riskCards || detailEmpty("暂无关联风险")}</div></section>
+    </div>`;
+}
+
+function detailEmpty(message) {
+  return `<div class="order-detail-empty"><span>✓</span><small>${escapeHtml(message)}</small></div>`;
+}
+
+function dueDateStatus(value) {
+  const due = new Date(`${value}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((due - today) / 86400000);
+  if (days === 0) return "今天交付";
+  return days > 0 ? `剩余 ${days} 天` : `已到期 ${Math.abs(days)} 天`;
 }
 
 async function loadApprovals() {

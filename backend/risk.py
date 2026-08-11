@@ -176,3 +176,66 @@ def business_data(db: Database, data_type: str) -> list[dict[str, Any]]:
         raise ValueError("不支持的业务数据类型")
     return db.fetch_all(queries[data_type])
 
+
+def order_detail(db: Database, order_id: int) -> dict[str, Any]:
+    order = db.fetch_one(
+        """SELECT so.*, c.code AS customer_code, c.name AS customer_name,
+                  c.tier AS customer_tier, c.industry AS customer_industry,
+                  c.contact AS customer_contact
+           FROM sales_orders so
+           JOIN customers c ON c.id = so.customer_id
+           WHERE so.id = ?""",
+        (order_id,),
+    )
+    if not order:
+        raise ValueError(f"未找到订单：{order_id}")
+
+    items = db.fetch_all(
+        """SELECT soi.id, soi.product_name, soi.quantity, soi.material_qty_per_unit,
+                  m.code AS material_code, m.name AS material_name,
+                  m.specification AS material_specification, m.unit AS material_unit,
+                  soi.quantity * soi.material_qty_per_unit AS required_material_qty
+           FROM sales_order_items soi
+           JOIN materials m ON m.id = soi.material_id
+           WHERE soi.sales_order_id = ?
+           ORDER BY soi.id""",
+        (order_id,),
+    )
+    production_tasks = db.fetch_all(
+        """SELECT pt.id, pt.task_number, pt.required_qty, pt.completed_qty, pt.status,
+                  m.code AS material_code, m.name AS material_name, m.unit AS material_unit
+           FROM production_tasks pt
+           JOIN materials m ON m.id = pt.material_id
+           WHERE pt.sales_order_id = ?
+           ORDER BY pt.id""",
+        (order_id,),
+    )
+    shipments = db.fetch_all(
+        """SELECT id, shipment_number, status, shipped_at
+           FROM shipments WHERE sales_order_id = ? ORDER BY id DESC""",
+        (order_id,),
+    )
+    invoices = db.fetch_all(
+        """SELECT id, invoice_number, amount, status, created_at
+           FROM invoices WHERE sales_order_id = ? ORDER BY id DESC""",
+        (order_id,),
+    )
+    risks = db.fetch_all(
+        """SELECT DISTINCT re.id, re.event_code, re.event_type, re.status, re.severity,
+                  re.shortage_qty, re.description, re.created_at,
+                  m.code AS material_code, m.name AS material_name, m.unit AS material_unit
+           FROM risk_events re
+           JOIN materials m ON m.id = re.material_id
+           JOIN production_tasks pt ON pt.material_id = re.material_id
+           WHERE pt.sales_order_id = ? AND re.status NOT IN ('已解决', '已关闭')
+           ORDER BY re.id DESC""",
+        (order_id,),
+    )
+    return {
+        "order": order,
+        "items": items,
+        "production_tasks": production_tasks,
+        "shipments": shipments,
+        "invoices": invoices,
+        "risks": risks,
+    }

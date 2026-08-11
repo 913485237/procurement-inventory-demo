@@ -73,6 +73,11 @@ def run(quick: bool) -> None:
             dashboard = request_json(base_url + "/api/dashboard?user_id=1")
             assert dashboard["metrics"]["order_count"] == 4
 
+            order = request_json(base_url + "/api/orders/4?user_id=1")
+            assert order["order"]["order_number"] == "SO-202608-0226"
+            assert order["items"][0]["product_name"] == "控制柜 C2"
+            assert order["shipments"][0]["shipment_number"] == "SHP-202608-0096"
+
             risk = request_json(base_url + "/api/risk?user_id=1")
             assert risk["metrics"]["shortage"] == 520
             assert risk["metrics"]["affected_orders"] == 3
@@ -106,7 +111,7 @@ def run(quick: bool) -> None:
 
             audits = request_json(base_url + "/api/audits?user_id=1&limit=100")
             assert len(audits["audits"]) >= 6
-            print(f"FULL OK · dashboard/risk/ai/approval/permission/audit · {base_url}")
+            print(f"FULL OK · dashboard/order/risk/ai/approval/permission/audit · {base_url}")
         finally:
             process.terminate()
             try:
@@ -120,4 +125,3 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--quick", action="store_true")
     run(parser.parse_args().quick)
-

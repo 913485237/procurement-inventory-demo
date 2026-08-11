@@ -5,9 +5,9 @@ const state = {
   activeView: "dashboard",
   businessType: "orders",
   businessItems: [],
-  orderDetailRequest: 0,
-  selectedOrderId: null,
-  orderDetailTrigger: null,
+  businessDetailRequest: 0,
+  selectedBusinessDetail: null,
+  businessDetailTrigger: null,
   approvals: [],
   selectedApproval: null,
   risk: null,
@@ -83,6 +83,24 @@ const businessColumns = {
     ["invoice_number", "发票号", "strong"], ["order_number", "销售订单"], ["customer_name", "客户"],
     ["amount", "金额", "money"], ["status", "状态", "status"], ["created_at", "创建时间", "datetime"],
   ],
+};
+
+const businessDetailMeta = {
+  orders: { label: "订单", primary: "order_number", secondary: ["customer_name", "customer_tier"] },
+  materials: { label: "物料", primary: "code", secondary: ["name", "specification"] },
+  suppliers: { label: "供应商", primary: "code", secondary: ["name", "rating"] },
+  purchases: { label: "采购单", primary: "po_number", secondary: ["supplier_name", "status"] },
+  shipments: { label: "出货单", primary: "shipment_number", secondary: ["order_number", "customer_name"] },
+  invoices: { label: "发票", primary: "invoice_number", secondary: ["order_number", "customer_name"] },
+};
+
+const businessLinkFields = {
+  orders: ["order_number", "customer_name"],
+  materials: ["code", "name"],
+  suppliers: ["code", "name"],
+  purchases: ["po_number", "supplier_name"],
+  shipments: ["shipment_number", "order_number"],
+  invoices: ["invoice_number", "order_number"],
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -161,18 +179,18 @@ function bindEvents() {
   });
   document.getElementById("business-search").addEventListener("input", filterBusinessTable);
   document.getElementById("business-table").addEventListener("click", (event) => {
-    const row = event.target.closest("tr[data-order-id]");
-    if (row) openOrderDetail(Number(row.dataset.orderId), row);
+    const row = event.target.closest("tr[data-business-type][data-business-id]");
+    if (row) openBusinessDetail(row.dataset.businessType, Number(row.dataset.businessId), row);
   });
   document.getElementById("business-table").addEventListener("keydown", (event) => {
-    const row = event.target.closest("tr[data-order-id]");
+    const row = event.target.closest("tr[data-business-type][data-business-id]");
     if (row && ["Enter", " "].includes(event.key)) {
       event.preventDefault();
-      openOrderDetail(Number(row.dataset.orderId), row);
+      openBusinessDetail(row.dataset.businessType, Number(row.dataset.businessId), row);
     }
   });
-  document.getElementById("order-detail-modal").addEventListener("click", (event) => {
-    if (event.target === event.currentTarget || event.target.closest("[data-close-order-detail]")) closeOrderDetail();
+  document.getElementById("business-detail-modal").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget || event.target.closest("[data-close-business-detail]")) closeBusinessDetail();
   });
   document.getElementById("settings-form").addEventListener("submit", saveSettings);
   document.getElementById("refresh-audit").addEventListener("click", loadAudit);
@@ -195,7 +213,7 @@ function bindEvents() {
     }
     if (event.key === "Escape") {
       closeApprovalModal();
-      closeOrderDetail();
+      closeBusinessDetail();
       closeNotificationDrawer();
       closePreferences();
     }
@@ -560,9 +578,8 @@ function renderBusinessTable() {
     return;
   }
   document.getElementById("business-table").innerHTML = `<table><thead><tr>${columns.map(([, label]) => `<th>${label}</th>`).join("")}</tr></thead><tbody>${items.map((item) => {
-    const interactive = state.businessType === "orders"
-      ? ` class="order-row" data-order-id="${Number(item.id)}" tabindex="0" role="button" aria-label="查看订单 ${escapeHtml(item.order_number)} 详情"`
-      : "";
+    const meta = businessDetailMeta[state.businessType];
+    const interactive = ` class="business-detail-row" data-business-type="${state.businessType}" data-business-id="${Number(item.id)}" tabindex="0" role="button" aria-label="查看${meta.label} ${escapeHtml(item[meta.primary])} 详情"`;
     return `<tr${interactive}>${columns.map(([key,, type]) => `<td>${formatBusinessCell(item, key, type)}</td>`).join("")}</tr>`;
   }).join("")}</tbody></table>`;
   filterBusinessTable();
@@ -570,8 +587,8 @@ function renderBusinessTable() {
 
 function formatBusinessCell(item, key, type) {
   const value = formatCell(item[key], type);
-  if (state.businessType === "orders" && ["order_number", "customer_name"].includes(key)) {
-    return `<span class="order-cell-link">${value}</span>`;
+  if (businessLinkFields[state.businessType]?.includes(key)) {
+    return `<span class="business-cell-link">${value}</span>`;
   }
   return value;
 }
@@ -583,47 +600,55 @@ function filterBusinessTable() {
   });
 }
 
-async function openOrderDetail(orderId, trigger = null) {
-  const modal = document.getElementById("order-detail-modal");
-  const body = document.getElementById("order-detail-body");
-  const listItem = state.businessItems.find((item) => item.id === orderId);
-  const requestId = ++state.orderDetailRequest;
-  state.selectedOrderId = orderId;
-  state.orderDetailTrigger = trigger;
-  document.getElementById("order-detail-title").textContent = listItem?.order_number || "订单详情";
-  document.getElementById("order-detail-subtitle").textContent = listItem
-    ? `${listItem.customer_name} · ${listItem.customer_tier}`
-    : "正在读取订单信息";
-  body.innerHTML = `<div class="order-detail-loading"><span></span><strong>正在读取完整订单信息</strong><small>同步产品、生产、履约与风险数据</small></div>`;
+async function openBusinessDetail(type, recordId, trigger = null) {
+  const meta = businessDetailMeta[type];
+  if (!meta) return;
+  const modal = document.getElementById("business-detail-modal");
+  const body = document.getElementById("business-detail-body");
+  const listItem = state.businessItems.find((item) => item.id === recordId);
+  const requestId = ++state.businessDetailRequest;
+  state.selectedBusinessDetail = { type, recordId };
+  state.businessDetailTrigger = trigger;
+  setBusinessDetailHeading(
+    listItem?.[meta.primary] || `${meta.label}详情`,
+    listItem ? meta.secondary.map((key) => listItem[key]).filter(Boolean).join(" · ") : `正在读取${meta.label}信息`,
+  );
+  body.innerHTML = `<div class="order-detail-loading"><span></span><strong>正在读取完整${meta.label}信息</strong><small>同步基础信息与关联业务数据</small></div>`;
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
   modal.querySelector(".modal-close").focus();
   try {
-    const detail = await api(`/api/orders/${orderId}`);
-    if (requestId !== state.orderDetailRequest || state.selectedOrderId !== orderId) return;
-    renderOrderDetail(detail);
+    const endpoint = type === "orders" ? `/api/orders/${recordId}` : `/api/business/${type}/${recordId}`;
+    const detail = await api(endpoint);
+    if (requestId !== state.businessDetailRequest || state.selectedBusinessDetail?.type !== type || state.selectedBusinessDetail?.recordId !== recordId) return;
+    if (type === "orders") renderOrderDetail(detail);
+    else renderBusinessEntityDetail(type, detail);
   } catch (error) {
-    if (requestId !== state.orderDetailRequest) return;
-    body.innerHTML = `<div class="order-detail-error"><span>!</span><strong>订单详情读取失败</strong><p>${escapeHtml(error.message)}</p><button class="button secondary" data-close-order-detail>关闭</button></div>`;
+    if (requestId !== state.businessDetailRequest) return;
+    body.innerHTML = `<div class="order-detail-error"><span>!</span><strong>${meta.label}详情读取失败</strong><p>${escapeHtml(error.message)}</p><button class="button secondary" data-close-business-detail>关闭</button></div>`;
   }
 }
 
-function closeOrderDetail() {
-  const modal = document.getElementById("order-detail-modal");
+function closeBusinessDetail() {
+  const modal = document.getElementById("business-detail-modal");
   if (modal.classList.contains("hidden")) return;
-  state.orderDetailRequest += 1;
-  state.selectedOrderId = null;
+  state.businessDetailRequest += 1;
+  state.selectedBusinessDetail = null;
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
-  const trigger = state.orderDetailTrigger;
-  state.orderDetailTrigger = null;
+  const trigger = state.businessDetailTrigger;
+  state.businessDetailTrigger = null;
   if (trigger?.isConnected) trigger.focus();
+}
+
+function setBusinessDetailHeading(title, subtitle) {
+  document.getElementById("business-detail-title").textContent = title;
+  document.getElementById("business-detail-subtitle").textContent = subtitle;
 }
 
 function renderOrderDetail(detail) {
   const { order, items, production_tasks: tasks, shipments, invoices, risks } = detail;
-  document.getElementById("order-detail-title").textContent = order.order_number;
-  document.getElementById("order-detail-subtitle").textContent = `${order.customer_name} · ${order.customer_tier}`;
+  setBusinessDetailHeading(order.order_number, `${order.customer_name} · ${order.customer_tier}`);
   const itemRows = items.map((item) => `
     <tr><td><strong>${escapeHtml(item.product_name)}</strong><small>${number(item.quantity)} 件</small></td><td><strong>${escapeHtml(item.material_name)}</strong><small>${escapeHtml(item.material_code)} · ${escapeHtml(item.material_specification)}</small></td><td>${number(item.material_qty_per_unit)} ${escapeHtml(item.material_unit)}</td><td><strong>${number(item.required_material_qty)} ${escapeHtml(item.material_unit)}</strong></td></tr>
   `).join("");
@@ -635,7 +660,7 @@ function renderOrderDetail(detail) {
   const invoiceCards = invoices.map((item) => `<div class="fulfillment-record"><span>发票</span><strong>${escapeHtml(item.invoice_number)}</strong><small>${statusTag(item.status)} ${formatMoney(item.amount)} · ${formatDateTime(item.created_at)}</small></div>`).join("");
   const riskCards = risks.map((risk) => `<article class="order-risk-record"><div><span>${escapeHtml(risk.event_code)} · ${escapeHtml(risk.severity)}</span>${statusTag(risk.status)}</div><strong>${escapeHtml(risk.material_name)}存在${escapeHtml(risk.event_type)}</strong><p>${escapeHtml(risk.description)}</p><small>预计缺口 ${number(risk.shortage_qty)} ${escapeHtml(risk.material_unit)} · ${formatDateTime(risk.created_at)}</small></article>`).join("");
 
-  document.getElementById("order-detail-body").innerHTML = `
+  document.getElementById("business-detail-body").innerHTML = `
     <div class="order-detail-hero"><div><span>订单金额</span><strong>${formatMoney(order.total_amount)}</strong></div><div><span>当前状态</span>${statusTag(order.status)}</div><div><span>优先级</span>${priorityTag(order.priority)}</div><div><span>交付节点</span><strong>${escapeHtml(order.due_date)}</strong><small>${dueDateStatus(order.due_date)}</small></div></div>
     <div class="order-detail-grid">
       <section class="order-detail-section"><div class="order-detail-section-head"><span>ORDER</span><h3>订单信息</h3></div><dl class="order-detail-fields"><div><dt>订单编号</dt><dd>${escapeHtml(order.order_number)}</dd></div><div><dt>创建时间</dt><dd>${formatDateTime(order.created_at)}</dd></div><div><dt>交付日期</dt><dd>${escapeHtml(order.due_date)}</dd></div><div><dt>订单状态</dt><dd>${escapeHtml(order.status)}</dd></div></dl></section>
@@ -647,6 +672,130 @@ function renderOrderDetail(detail) {
       <section class="order-detail-section"><div class="order-detail-section-head"><span>FULFILLMENT</span><h3>出货与发票</h3></div><div class="fulfillment-list">${shipmentCards || detailEmpty("暂无出货记录")}${invoiceCards || detailEmpty("暂无发票记录")}</div></section>
       <section class="order-detail-section"><div class="order-detail-section-head"><span>RISK</span><h3>关联风险</h3></div><div class="order-risk-list">${riskCards || detailEmpty("暂无关联风险")}</div></section>
     </div>`;
+}
+
+function renderBusinessEntityDetail(type, detail) {
+  const renderers = {
+    materials: renderMaterialDetail,
+    suppliers: renderSupplierDetail,
+    purchases: renderPurchaseDetail,
+    shipments: renderShipmentDetail,
+    invoices: renderInvoiceDetail,
+  };
+  const renderer = renderers[type];
+  if (!renderer) throw new Error("暂不支持该业务详情");
+  renderer(detail);
+}
+
+function renderMaterialDetail({ record: material, purchases, production, risks }) {
+  const inventoryValue = material.current_stock * material.unit_cost;
+  const stockGap = material.current_stock - material.safety_stock;
+  const health = stockHealth(material.current_stock, material.safety_stock);
+  setBusinessDetailHeading(material.code, `${material.name} · ${material.specification}`);
+  const purchaseRows = purchases.map((item) => `<tr><td><strong>${escapeHtml(item.po_number)}</strong><small>${escapeHtml(item.supplier_name)}</small></td><td>${statusTag(item.status)}</td><td>${number(item.quantity)} / ${number(item.received_quantity)} ${escapeHtml(material.unit)}</td><td><strong>${number(item.pending_quantity)} ${escapeHtml(material.unit)}</strong></td><td>${escapeHtml(item.expected_date)}</td></tr>`).join("");
+  const productionRows = production.map((item) => `<tr><td><strong>${escapeHtml(item.task_number)}</strong><small>${escapeHtml(item.order_number)}</small></td><td>${escapeHtml(item.customer_name)}</td><td>${number(item.completed_qty)} / ${number(item.required_qty)} ${escapeHtml(material.unit)}</td><td>${statusTag(item.status)}</td><td>${escapeHtml(item.due_date)}</td></tr>`).join("");
+  document.getElementById("business-detail-body").innerHTML = `
+    <div class="order-detail-hero"><div><span>当前库存</span><strong>${number(material.current_stock)} ${escapeHtml(material.unit)}</strong></div><div><span>安全库存</span><strong>${number(material.safety_stock)} ${escapeHtml(material.unit)}</strong></div><div><span>库存状态</span><span class="tag ${health.cls}">${health.label}</span></div><div><span>库存金额</span><strong>${formatMoney(inventoryValue)}</strong></div></div>
+    <div class="order-detail-grid">
+      ${detailSection("MATERIAL", "物料信息", detailFields([["物料编码", material.code], ["物料名称", material.name], ["规格型号", material.specification], ["计量单位", material.unit], ["单位成本", formatMoney(material.unit_cost)]]))}
+      ${detailSection("INVENTORY", "库存分析", detailFields([["当前库存", `${number(material.current_stock)} ${material.unit}`], ["安全库存", `${number(material.safety_stock)} ${material.unit}`], ["安全线差值", `${stockGap >= 0 ? "+" : ""}${number(stockGap)} ${material.unit}`], ["库存状态", health.label], ["库存价值", formatMoney(inventoryValue)]]))}
+    </div>
+    ${detailSection("INBOUND PURCHASE", "采购在途", detailTable(["采购单 / 供应商", "状态", "订购 / 已到", "未到数量", "预计到货"], purchaseRows, "暂无采购在途记录"))}
+    ${detailSection("PRODUCTION DEMAND", "生产需求", detailTable(["工单 / 订单", "客户", "完成 / 需求", "状态", "交付日期"], productionRows, "暂无生产需求"))}
+    ${detailSection("RISK", "风险事件", renderRiskRecords(risks, material))}`;
+}
+
+function renderSupplierDetail({ record: supplier, stats, purchases, materials }) {
+  setBusinessDetailHeading(supplier.code, `${supplier.name} · ${supplier.rating} 级供应商`);
+  const purchaseRows = purchases.map((item) => `<tr><td><strong>${escapeHtml(item.po_number)}</strong><small>${formatDateTime(item.created_at)}</small></td><td>${statusTag(item.status)}</td><td>${escapeHtml(item.expected_date)}</td><td><strong>${formatMoney(item.total_amount)}</strong></td></tr>`).join("");
+  const materialRows = materials.map((item) => `<tr><td><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.code)} · ${escapeHtml(item.specification)}</small></td><td>${number(item.purchased_quantity)} ${escapeHtml(item.unit)}</td><td>${number(item.received_quantity)} ${escapeHtml(item.unit)}</td><td><strong>${number(item.pending_quantity)} ${escapeHtml(item.unit)}</strong></td></tr>`).join("");
+  document.getElementById("business-detail-body").innerHTML = `
+    <div class="order-detail-hero"><div><span>供应商评级</span><span class="tag blue">${escapeHtml(supplier.rating)} 级</span></div><div><span>标准交期</span><strong>${number(supplier.lead_days)} 天</strong></div><div><span>准时交付率</span><strong>${number(supplier.on_time_rate)}%</strong></div><div><span>累计采购金额</span><strong>${formatMoney(stats.total_amount)}</strong></div></div>
+    <div class="order-detail-grid">
+      ${detailSection("SUPPLIER", "供应商信息", detailFields([["供应商编码", supplier.code], ["供应商名称", supplier.name], ["供应商评级", `${supplier.rating} 级`], ["业务联系人", supplier.contact], ["标准交期", `${number(supplier.lead_days)} 天`]]))}
+      ${detailSection("PURCHASE SUMMARY", "采购汇总", detailFields([["采购单数量", `${number(stats.purchase_count)} 张`], ["未完成采购", `${number(stats.open_count)} 张`], ["累计采购金额", formatMoney(stats.total_amount)], ["平均订单金额", formatMoney(stats.average_amount)], ["准时交付率", `${number(supplier.on_time_rate)}%`]]))}
+    </div>
+    ${detailSection("PURCHASE HISTORY", "采购历史", detailTable(["采购单", "状态", "预计到货", "采购金额"], purchaseRows, "暂无采购记录"))}
+    ${detailSection("SUPPLIED MATERIALS", "供应物料", detailTable(["物料", "累计采购", "已到货", "未到数量"], materialRows, "暂无供应物料记录"))}`;
+}
+
+function renderPurchaseDetail({ record: purchase, items, risks }) {
+  const ordered = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  const received = items.reduce((sum, item) => sum + Number(item.received_quantity || 0), 0);
+  const progress = progressPercent(received, ordered);
+  setBusinessDetailHeading(purchase.po_number, `${purchase.supplier_name} · ${purchase.status}`);
+  const itemRows = items.map((item) => {
+    const itemProgress = progressPercent(item.received_quantity, item.quantity);
+    return `<tr><td><strong>${escapeHtml(item.material_name)}</strong><small>${escapeHtml(item.material_code)} · ${escapeHtml(item.material_specification)}</small></td><td>${number(item.quantity)} ${escapeHtml(item.material_unit)}</td><td>${number(item.received_quantity)} ${escapeHtml(item.material_unit)}</td><td>${number(item.pending_quantity)} ${escapeHtml(item.material_unit)}</td><td><strong>${itemProgress}%</strong><div class="mini-progress"><i style="width:${itemProgress}%"></i></div></td></tr>`;
+  }).join("");
+  document.getElementById("business-detail-body").innerHTML = `
+    <div class="order-detail-hero"><div><span>采购金额</span><strong>${formatMoney(purchase.total_amount)}</strong></div><div><span>当前状态</span>${statusTag(purchase.status)}</div><div><span>预计到货</span><strong>${escapeHtml(purchase.expected_date)}</strong></div><div><span>到货进度</span><strong>${progress}%</strong><div class="hero-progress"><i style="width:${progress}%"></i></div></div></div>
+    <div class="order-detail-grid">
+      ${detailSection("PURCHASE", "采购信息", detailFields([["采购单号", purchase.po_number], ["创建时间", formatDateTime(purchase.created_at)], ["预计到货", purchase.expected_date], ["采购状态", purchase.status], ["采购金额", formatMoney(purchase.total_amount)]]))}
+      ${detailSection("SUPPLIER", "供应商信息", detailFields([["供应商编码", purchase.supplier_code], ["供应商名称", purchase.supplier_name], ["供应商评级", `${purchase.supplier_rating} 级`], ["标准交期", `${number(purchase.supplier_lead_days)} 天`], ["准时交付率", `${number(purchase.supplier_on_time_rate)}%`], ["业务联系人", purchase.supplier_contact]]))}
+    </div>
+    ${detailSection("PURCHASE ITEMS", "采购明细", detailTable(["物料", "订购数量", "已到货", "未到数量", "完成率"], itemRows, "暂无采购明细"))}
+    ${detailSection("RISK", "关联风险", renderRiskRecords(risks))}`;
+}
+
+function renderShipmentDetail({ record: shipment, items, invoices }) {
+  setBusinessDetailHeading(shipment.shipment_number, `${shipment.order_number} · ${shipment.customer_name}`);
+  const itemRows = fulfillmentItemRows(items);
+  const invoiceRecords = invoices.map((item) => `<div class="fulfillment-record"><span>发票</span><strong>${escapeHtml(item.invoice_number)}</strong><small>${statusTag(item.status)} ${formatMoney(item.amount)} · ${formatDateTime(item.created_at)}</small></div>`).join("");
+  document.getElementById("business-detail-body").innerHTML = `
+    <div class="order-detail-hero"><div><span>出货状态</span>${statusTag(shipment.status)}</div><div><span>出货时间</span><strong>${formatDateTime(shipment.shipped_at)}</strong></div><div><span>订单金额</span><strong>${formatMoney(shipment.order_amount)}</strong></div><div><span>计划交付</span><strong>${escapeHtml(shipment.due_date)}</strong><small>${dueDateStatus(shipment.due_date)}</small></div></div>
+    <div class="order-detail-grid">
+      ${detailSection("SHIPMENT & ORDER", "出货与订单", detailFields([["出货单号", shipment.shipment_number], ["出货状态", shipment.status], ["销售订单", shipment.order_number], ["订单状态", shipment.order_status], ["订单优先级", shipment.order_priority], ["订单金额", formatMoney(shipment.order_amount)]]))}
+      ${detailSection("CUSTOMER", "客户信息", detailFields([["客户编码", shipment.customer_code], ["客户名称", shipment.customer_name], ["客户等级", shipment.customer_tier], ["所属行业", shipment.customer_industry], ["业务联系人", shipment.customer_contact]]))}
+    </div>
+    ${detailSection("PRODUCTS", "产品明细", detailTable(["产品", "数量", "关联物料", "物料规格"], itemRows, "暂无产品明细"))}
+    ${detailSection("INVOICE", "发票状态", `<div class="fulfillment-list">${invoiceRecords || detailEmpty("暂无关联发票")}</div>`)}`;
+}
+
+function renderInvoiceDetail({ record: invoice, items, shipments }) {
+  setBusinessDetailHeading(invoice.invoice_number, `${invoice.order_number} · ${invoice.customer_name}`);
+  const itemRows = fulfillmentItemRows(items);
+  const shipmentRecords = shipments.map((item) => `<div class="fulfillment-record"><span>出货单</span><strong>${escapeHtml(item.shipment_number)}</strong><small>${statusTag(item.status)} ${formatDateTime(item.shipped_at)}</small></div>`).join("");
+  document.getElementById("business-detail-body").innerHTML = `
+    <div class="order-detail-hero"><div><span>开票金额</span><strong>${formatMoney(invoice.amount)}</strong></div><div><span>发票状态</span>${statusTag(invoice.status)}</div><div><span>订单金额</span><strong>${formatMoney(invoice.order_amount)}</strong></div><div><span>开票时间</span><strong>${formatDateTime(invoice.created_at)}</strong></div></div>
+    <div class="order-detail-grid">
+      ${detailSection("INVOICE & ORDER", "发票与订单", detailFields([["发票号码", invoice.invoice_number], ["发票状态", invoice.status], ["销售订单", invoice.order_number], ["订单状态", invoice.order_status], ["订单优先级", invoice.order_priority], ["计划交付", invoice.due_date]]))}
+      ${detailSection("CUSTOMER", "客户信息", detailFields([["客户编码", invoice.customer_code], ["客户名称", invoice.customer_name], ["客户等级", invoice.customer_tier], ["所属行业", invoice.customer_industry], ["业务联系人", invoice.customer_contact]]))}
+    </div>
+    ${detailSection("PRODUCTS", "产品明细", detailTable(["产品", "数量", "关联物料", "物料规格"], itemRows, "暂无产品明细"))}
+    ${detailSection("SHIPMENT", "出货状态", `<div class="fulfillment-list">${shipmentRecords || detailEmpty("暂无关联出货记录")}</div>`)}`;
+}
+
+function detailSection(kicker, title, content) {
+  return `<section class="order-detail-section"><div class="order-detail-section-head"><span>${escapeHtml(kicker)}</span><h3>${escapeHtml(title)}</h3></div>${content}</section>`;
+}
+
+function detailFields(fields) {
+  return `<dl class="order-detail-fields">${fields.map(([label, value], index) => `<div class="${index === fields.length - 1 && fields.length % 2 ? "wide" : ""}"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? "—")}</dd></div>`).join("")}</dl>`;
+}
+
+function detailTable(headers, rows, emptyMessage) {
+  if (!rows) return detailEmpty(emptyMessage);
+  return `<div class="order-detail-table"><table><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function renderRiskRecords(risks, material = null) {
+  if (!risks.length) return detailEmpty("暂无关联风险");
+  return `<div class="order-risk-list">${risks.map((risk) => `<article class="order-risk-record"><div><span>${escapeHtml(risk.event_code)} · ${escapeHtml(risk.severity)}</span>${statusTag(risk.status)}</div><strong>${escapeHtml(material?.name || risk.material_name || "关联物料")}存在${escapeHtml(risk.event_type)}</strong><p>${escapeHtml(risk.description)}</p><small>预计缺口 ${number(risk.shortage_qty)} ${escapeHtml(material?.unit || risk.material_unit || "")} · ${formatDateTime(risk.created_at)}</small></article>`).join("")}</div>`;
+}
+
+function fulfillmentItemRows(items) {
+  return items.map((item) => `<tr><td><strong>${escapeHtml(item.product_name)}</strong></td><td>${number(item.quantity)} 件</td><td><strong>${escapeHtml(item.material_name)}</strong><small>${escapeHtml(item.material_code)}</small></td><td>${escapeHtml(item.material_specification)}</td></tr>`).join("");
+}
+
+function progressPercent(done, total) {
+  return Number(total) > 0 ? Math.min(100, Math.round(Number(done || 0) / Number(total) * 100)) : 0;
+}
+
+function stockHealth(current, safety) {
+  if (Number(current) < Number(safety)) return { label: "低于安全库存", cls: "red" };
+  if (Number(current) <= Number(safety) * 1.2) return { label: "接近安全线", cls: "amber" };
+  return { label: "库存充足", cls: "green" };
 }
 
 function detailEmpty(message) {

@@ -17,7 +17,7 @@ from backend.audit import list_audits, write_audit
 from backend.auth import PermissionDenied, get_user, list_users, require
 from backend.db import Database
 from backend.erp import decide_approval, list_approvals
-from backend.risk import analyze_material_risk, business_data, dashboard_data, order_detail
+from backend.risk import analyze_material_risk, business_data, business_detail, dashboard_data, order_detail
 
 
 ROOT = Path(__file__).resolve().parent
@@ -128,6 +128,15 @@ class ERPRequestHandler(BaseHTTPRequestHandler):
                 raise ValueError("不支持的业务数据类型")
             require(user, permission)
             self._send_json({"type": data_type, "items": business_data(db, data_type)})
+            return
+        business_detail_match = re.fullmatch(r"/api/business/([a-z]+)/([0-9]+)", path)
+        if business_detail_match:
+            data_type = business_detail_match.group(1)
+            permission = BUSINESS_PERMISSIONS.get(data_type)
+            if not permission or data_type == "orders":
+                raise ValueError("不支持的业务详情类型")
+            require(user, permission)
+            self._send_json(business_detail(db, data_type, int(business_detail_match.group(2))))
             return
         order_match = re.fullmatch(r"/api/orders/(\d+)", path)
         if order_match:

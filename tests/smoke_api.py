@@ -78,6 +78,15 @@ def run(quick: bool) -> None:
             assert order["items"][0]["product_name"] == "控制柜 C2"
             assert order["shipments"][0]["shipment_number"] == "SHP-202608-0096"
 
+            material = request_json(base_url + "/api/business/materials/1?user_id=1")
+            assert material["record"]["code"] == "M-AL-6061"
+            supplier = request_json(base_url + "/api/business/suppliers/1?user_id=1")
+            assert supplier["stats"]["purchase_count"] == 1
+            purchase = request_json(base_url + "/api/business/purchases/1?user_id=1")
+            assert purchase["items"][0]["material_code"] == "M-AL-6061"
+            shipment = request_json(base_url + "/api/business/shipments/1?user_id=1")
+            assert shipment["record"]["order_number"] == "SO-202608-0226"
+
             risk = request_json(base_url + "/api/risk?user_id=1")
             assert risk["metrics"]["shortage"] == 520
             assert risk["metrics"]["affected_orders"] == 3
@@ -100,6 +109,26 @@ def run(quick: bool) -> None:
             )
             assert approved["execution"]["quantity"] == 700
 
+            fulfillment = request_json(
+                base_url + "/api/ai/command",
+                {"user_id": 1, "command": "为受影响订单出货并开票"},
+            )
+            fulfillment_approval_id = fulfillment["execution"]["approval"]["id"]
+            request_json(
+                base_url + f"/api/approvals/{fulfillment_approval_id}/decision",
+                {"user_id": 1, "decision": "approved", "note": "冒烟测试交付批准"},
+            )
+            invoice_list = request_json(base_url + "/api/business?type=invoices&user_id=1")
+            invoice_id = invoice_list["items"][0]["id"]
+            invoice = request_json(base_url + f"/api/business/invoices/{invoice_id}?user_id=1")
+            assert invoice["record"]["order_number"] == "SO-202608-0219"
+
+            try:
+                request_json(base_url + "/api/business/materials/1?user_id=5")
+                raise AssertionError("财务角色越权查看物料详情未被拒绝")
+            except urllib.error.HTTPError as exc:
+                assert exc.code == 403
+
             try:
                 request_json(
                     base_url + "/api/ai/command",
@@ -111,7 +140,7 @@ def run(quick: bool) -> None:
 
             audits = request_json(base_url + "/api/audits?user_id=1&limit=100")
             assert len(audits["audits"]) >= 6
-            print(f"FULL OK · dashboard/order/risk/ai/approval/permission/audit · {base_url}")
+            print(f"FULL OK · dashboard/details/risk/ai/approval/permission/audit · {base_url}")
         finally:
             process.terminate()
             try:

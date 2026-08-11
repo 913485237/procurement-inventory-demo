@@ -8,7 +8,7 @@ from pathlib import Path
 from backend.auth import PermissionDenied, get_user
 from backend.db import Database, json_value, utc_now_text
 from backend.erp import create_approval, decide_approval, list_approvals
-from backend.risk import analyze_material_risk, dashboard_data, order_detail
+from backend.risk import analyze_material_risk, business_detail, dashboard_data, order_detail
 
 
 class CoreWorkflowTest(unittest.TestCase):
@@ -41,6 +41,41 @@ class CoreWorkflowTest(unittest.TestCase):
     def test_order_detail_rejects_unknown_order(self) -> None:
         with self.assertRaisesRegex(ValueError, "未找到订单"):
             order_detail(self.db, 999)
+
+    def test_business_details_aggregate_related_records(self) -> None:
+        material = business_detail(self.db, "materials", 1)
+        self.assertEqual(material["record"]["code"], "M-AL-6061")
+        self.assertEqual(material["purchases"][0]["supplier_name"], "华东铝业集团")
+        self.assertEqual(len(material["production"]), 3)
+        self.assertEqual(material["risks"][0]["event_code"], "RM-202405")
+
+        supplier = business_detail(self.db, "suppliers", 1)
+        self.assertEqual(supplier["stats"]["purchase_count"], 1)
+        self.assertEqual(supplier["materials"][0]["code"], "M-AL-6061")
+
+        purchase = business_detail(self.db, "purchases", 1)
+        self.assertEqual(purchase["record"]["supplier_code"], "SUP-001")
+        self.assertEqual(purchase["items"][0]["pending_quantity"], 240)
+        self.assertEqual(purchase["risks"][0]["event_code"], "RM-202405")
+
+        shipment = business_detail(self.db, "shipments", 1)
+        self.assertEqual(shipment["record"]["order_number"], "SO-202608-0226")
+        self.assertEqual(shipment["items"][0]["product_name"], "控制柜 C2")
+
+        invoice_id = self.db.execute(
+            """INSERT INTO invoices(invoice_number, sales_order_id, amount, status, created_at, idempotency_key)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("INV-TEST-001", 4, 186000, "已开票", utc_now_text(), "invoice-detail-test"),
+        )
+        invoice = business_detail(self.db, "invoices", invoice_id)
+        self.assertEqual(invoice["record"]["customer_name"], "联创机电")
+        self.assertEqual(invoice["shipments"][0]["shipment_number"], "SHP-202608-0096")
+
+    def test_business_detail_rejects_unknown_type_and_record(self) -> None:
+        with self.assertRaisesRegex(ValueError, "不支持的业务详情类型"):
+            business_detail(self.db, "orders", 1)
+        with self.assertRaisesRegex(ValueError, "未找到物料"):
+            business_detail(self.db, "materials", 999)
 
     def test_replenishment_requires_and_executes_approval(self) -> None:
         request = create_approval(

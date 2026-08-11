@@ -177,6 +177,192 @@ def business_data(db: Database, data_type: str) -> list[dict[str, Any]]:
     return db.fetch_all(queries[data_type])
 
 
+def business_detail(db: Database, data_type: str, record_id: int) -> dict[str, Any]:
+    handlers = {
+        "materials": _material_detail,
+        "suppliers": _supplier_detail,
+        "purchases": _purchase_detail,
+        "shipments": _shipment_detail,
+        "invoices": _invoice_detail,
+    }
+    handler = handlers.get(data_type)
+    if not handler:
+        raise ValueError("不支持的业务详情类型")
+    return handler(db, record_id)
+
+
+def _required_record(db: Database, sql: str, record_id: int, label: str) -> dict[str, Any]:
+    record = db.fetch_one(sql, (record_id,))
+    if not record:
+        raise ValueError(f"未找到{label}：{record_id}")
+    return record
+
+
+def _material_detail(db: Database, material_id: int) -> dict[str, Any]:
+    material = _required_record(db, "SELECT * FROM materials WHERE id = ?", material_id, "物料")
+    purchases = db.fetch_all(
+        """SELECT po.id, po.po_number, po.status, po.expected_date, po.created_at,
+                  s.code AS supplier_code, s.name AS supplier_name,
+                  poi.quantity, poi.received_quantity,
+                  poi.quantity - poi.received_quantity AS pending_quantity
+           FROM purchase_order_items poi
+           JOIN purchase_orders po ON po.id = poi.purchase_order_id
+           JOIN suppliers s ON s.id = po.supplier_id
+           WHERE poi.material_id = ? AND po.status NOT IN ('已完成', '已取消')
+           ORDER BY po.id DESC""",
+        (material_id,),
+    )
+    production = db.fetch_all(
+        """SELECT pt.id, pt.task_number, pt.required_qty, pt.completed_qty, pt.status,
+                  so.id AS order_id, so.order_number, so.due_date,
+                  c.name AS customer_name
+           FROM production_tasks pt
+           JOIN sales_orders so ON so.id = pt.sales_order_id
+           JOIN customers c ON c.id = so.customer_id
+           WHERE pt.material_id = ? AND pt.status NOT IN ('已完成', '已取消')
+           ORDER BY pt.id""",
+        (material_id,),
+    )
+    risks = db.fetch_all(
+        """SELECT id, event_code, event_type, status, severity, shortage_qty,
+                  description, created_at
+           FROM risk_events
+           WHERE material_id = ? AND status NOT IN ('已解决', '已关闭')
+           ORDER BY id DESC""",
+        (material_id,),
+    )
+    return {"type": "materials", "record": material, "purchases": purchases, "production": production, "risks": risks}
+
+
+def _supplier_detail(db: Database, supplier_id: int) -> dict[str, Any]:
+    supplier = _required_record(db, "SELECT * FROM suppliers WHERE id = ?", supplier_id, "供应商")
+    purchases = db.fetch_all(
+        """SELECT id, po_number, status, expected_date, total_amount, created_at
+           FROM purchase_orders WHERE supplier_id = ? ORDER BY id DESC""",
+        (supplier_id,),
+    )
+    stats = db.fetch_one(
+        """SELECT COUNT(*) AS purchase_count,
+                  SUM(CASE WHEN status NOT IN ('已完成', '已取消') THEN 1 ELSE 0 END) AS open_count,
+                  COALESCE(SUM(total_amount), 0) AS total_amount,
+                  COALESCE(AVG(total_amount), 0) AS average_amount
+           FROM purchase_orders WHERE supplier_id = ?""",
+        (supplier_id,),
+    )
+    materials = db.fetch_all(
+        """SELECT m.id, m.code, m.name, m.specification, m.unit,
+                  SUM(poi.quantity) AS purchased_quantity,
+                  SUM(poi.received_quantity) AS received_quantity,
+                  SUM(poi.quantity - poi.received_quantity) AS pending_quantity
+           FROM purchase_order_items poi
+           JOIN purchase_orders po ON po.id = poi.purchase_order_id
+           JOIN materials m ON m.id = poi.material_id
+           WHERE po.supplier_id = ?
+           GROUP BY m.id, m.code, m.name, m.specification, m.unit
+           ORDER BY m.id""",
+        (supplier_id,),
+    )
+    return {"type": "suppliers", "record": supplier, "stats": stats, "purchases": purchases, "materials": materials}
+
+
+def _purchase_detail(db: Database, purchase_id: int) -> dict[str, Any]:
+    purchase = _required_record(
+        db,
+        """SELECT po.*, s.code AS supplier_code, s.name AS supplier_name,
+                  s.rating AS supplier_rating, s.lead_days AS supplier_lead_days,
+                  s.on_time_rate AS supplier_on_time_rate, s.contact AS supplier_contact
+           FROM purchase_orders po
+           JOIN suppliers s ON s.id = po.supplier_id
+           WHERE po.id = ?""",
+        purchase_id,
+        "采购单",
+    )
+    items = db.fetch_all(
+        """SELECT poi.id, poi.quantity, poi.received_quantity,
+                  poi.quantity - poi.received_quantity AS pending_quantity,
+                  m.id AS material_id, m.code AS material_code, m.name AS material_name,
+                  m.specification AS material_specification, m.unit AS material_unit
+           FROM purchase_order_items poi
+           JOIN materials m ON m.id = poi.material_id
+           WHERE poi.purchase_order_id = ? ORDER BY poi.id""",
+        (purchase_id,),
+    )
+    risks = db.fetch_all(
+        """SELECT DISTINCT re.id, re.event_code, re.event_type, re.status, re.severity,
+                  re.shortage_qty, re.description, re.created_at,
+                  m.code AS material_code, m.name AS material_name, m.unit AS material_unit
+           FROM risk_events re
+           JOIN materials m ON m.id = re.material_id
+           JOIN purchase_order_items poi ON poi.material_id = re.material_id
+           WHERE poi.purchase_order_id = ? AND re.status NOT IN ('已解决', '已关闭')
+           ORDER BY re.id DESC""",
+        (purchase_id,),
+    )
+    return {"type": "purchases", "record": purchase, "items": items, "risks": risks}
+
+
+def _shipment_detail(db: Database, shipment_id: int) -> dict[str, Any]:
+    shipment = _required_record(
+        db,
+        """SELECT sh.*, so.order_number, so.status AS order_status, so.due_date,
+                  so.total_amount AS order_amount, so.priority AS order_priority,
+                  c.code AS customer_code, c.name AS customer_name, c.tier AS customer_tier,
+                  c.industry AS customer_industry, c.contact AS customer_contact
+           FROM shipments sh
+           JOIN sales_orders so ON so.id = sh.sales_order_id
+           JOIN customers c ON c.id = so.customer_id
+           WHERE sh.id = ?""",
+        shipment_id,
+        "出货单",
+    )
+    items = db.fetch_all(
+        """SELECT soi.id, soi.product_name, soi.quantity,
+                  m.code AS material_code, m.name AS material_name,
+                  m.specification AS material_specification
+           FROM sales_order_items soi
+           JOIN materials m ON m.id = soi.material_id
+           WHERE soi.sales_order_id = ? ORDER BY soi.id""",
+        (shipment["sales_order_id"],),
+    )
+    invoices = db.fetch_all(
+        """SELECT id, invoice_number, amount, status, created_at
+           FROM invoices WHERE sales_order_id = ? ORDER BY id DESC""",
+        (shipment["sales_order_id"],),
+    )
+    return {"type": "shipments", "record": shipment, "items": items, "invoices": invoices}
+
+
+def _invoice_detail(db: Database, invoice_id: int) -> dict[str, Any]:
+    invoice = _required_record(
+        db,
+        """SELECT i.*, so.order_number, so.status AS order_status, so.due_date,
+                  so.total_amount AS order_amount, so.priority AS order_priority,
+                  c.code AS customer_code, c.name AS customer_name, c.tier AS customer_tier,
+                  c.industry AS customer_industry, c.contact AS customer_contact
+           FROM invoices i
+           JOIN sales_orders so ON so.id = i.sales_order_id
+           JOIN customers c ON c.id = so.customer_id
+           WHERE i.id = ?""",
+        invoice_id,
+        "发票",
+    )
+    items = db.fetch_all(
+        """SELECT soi.id, soi.product_name, soi.quantity,
+                  m.code AS material_code, m.name AS material_name,
+                  m.specification AS material_specification
+           FROM sales_order_items soi
+           JOIN materials m ON m.id = soi.material_id
+           WHERE soi.sales_order_id = ? ORDER BY soi.id""",
+        (invoice["sales_order_id"],),
+    )
+    shipments = db.fetch_all(
+        """SELECT id, shipment_number, status, shipped_at
+           FROM shipments WHERE sales_order_id = ? ORDER BY id DESC""",
+        (invoice["sales_order_id"],),
+    )
+    return {"type": "invoices", "record": invoice, "items": items, "shipments": shipments}
+
+
 def order_detail(db: Database, order_id: int) -> dict[str, Any]:
     order = db.fetch_one(
         """SELECT so.*, c.code AS customer_code, c.name AS customer_name,

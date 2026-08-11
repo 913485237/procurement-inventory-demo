@@ -10,19 +10,19 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
     "admin": {"*"},
     "procurement": {
         "dashboard.read", "risk.read", "supplier.read", "purchase.read",
-        "purchase.create", "approval.read", "audit.read",
+        "purchase.create", "replenishment.advise", "approval.read", "audit.read",
     },
     "warehouse": {
         "dashboard.read", "risk.read", "inventory.read", "order.read",
-        "shipment.read", "shipment.confirm", "approval.read", "audit.read",
+        "shipment.read", "shipment.confirm", "replenishment.advise", "approval.read", "audit.read",
     },
     "sales": {
         "dashboard.read", "risk.read", "customer.read", "order.read",
-        "order.coordinate", "shipment.read", "approval.read", "audit.read",
+        "order.coordinate", "shipment.read", "replenishment.advise", "approval.read", "audit.read",
     },
     "finance": {
-        "dashboard.read", "order.read", "shipment.read", "invoice.read",
-        "invoice.create", "approval.read", "audit.read",
+        "dashboard.read", "risk.read", "order.read", "shipment.read", "invoice.read",
+        "invoice.create", "replenishment.advise", "approval.read", "audit.read",
     },
 }
 
@@ -80,6 +80,7 @@ def describe_permissions(user: UserContext) -> dict:
         "supplier.read": "查看供应商",
         "purchase.read": "查看采购单",
         "purchase.create": "创建采购草稿",
+        "replenishment.advise": "提交人工补货建议",
         "inventory.read": "查看库存",
         "order.read": "查看销售订单",
         "order.coordinate": "发起交付协调",
@@ -99,4 +100,3 @@ def describe_permissions(user: UserContext) -> dict:
         "permissions": [{"code": p, "label": permission_labels.get(p, p)} for p in permissions],
         "message": f"AI 当前继承 {user.name}（{user.title}）的权限边界。",
     }
-

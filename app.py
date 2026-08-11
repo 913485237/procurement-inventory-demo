@@ -16,7 +16,12 @@ from backend.ai import AIService, ConfigStore
 from backend.audit import list_audits, write_audit
 from backend.auth import PermissionDenied, get_user, list_users, require
 from backend.db import Database
-from backend.erp import decide_approval, list_approvals
+from backend.erp import (
+    convert_replenishment_advice,
+    decide_approval,
+    list_approvals,
+    submit_manual_replenishment,
+)
 from backend.risk import analyze_material_risk, business_data, business_detail, dashboard_data, order_detail
 
 
@@ -65,6 +70,19 @@ class ERPRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/ai/command":
                 user = get_user(db, int(body.get("user_id", 1)))
                 self._send_json(ai_service.handle_command(user, str(body.get("command", ""))))
+                return
+            if parsed.path == "/api/replenishment/manual":
+                user = get_user(db, int(body.get("user_id", 1)))
+                params = {key: value for key, value in body.items() if key != "user_id"}
+                self._send_json(submit_manual_replenishment(db, user, params))
+                return
+            conversion_match = re.fullmatch(r"/api/replenishment/advice/(\d+)/convert", parsed.path)
+            if conversion_match:
+                user = get_user(db, int(body.get("user_id", 1)))
+                params = {key: value for key, value in body.items() if key != "user_id"}
+                self._send_json(
+                    convert_replenishment_advice(db, user, int(conversion_match.group(1)), params)
+                )
                 return
             decision_match = re.fullmatch(r"/api/approvals/(\d+)/decision", parsed.path)
             if decision_match:

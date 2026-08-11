@@ -13,6 +13,10 @@ const state = {
   dashboardTrendTrigger: null,
   approvals: [],
   selectedApproval: null,
+  selectedAdvice: null,
+  manualReplenishmentTrigger: null,
+  adviceConversionTrigger: null,
+  suppliers: [],
   risk: null,
   notifications: [
     {
@@ -160,6 +164,8 @@ function bindEvents() {
   document.getElementById("preferences-reset").addEventListener("click", resetPreferences);
 
   document.getElementById("user-select").addEventListener("change", async (event) => {
+    closeManualReplenishment({ restoreFocus: false });
+    closeAdviceConversion({ restoreFocus: false });
     state.userId = Number(event.target.value);
     state.currentUser = state.users.find((user) => user.id === state.userId);
     updateCurrentUserUI();
@@ -223,6 +229,15 @@ function bindEvents() {
   document.getElementById("reset-demo").addEventListener("click", resetDemo);
   document.getElementById("approve-approval").addEventListener("click", () => decideSelectedApproval("approved"));
   document.getElementById("reject-approval").addEventListener("click", () => decideSelectedApproval("rejected"));
+  document.getElementById("manual-replenishment-button").addEventListener("click", (event) => openManualReplenishment(event.currentTarget));
+  document.getElementById("manual-replenishment-modal").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget || event.target.closest("[data-close-manual-replenishment]")) closeManualReplenishment();
+  });
+  document.getElementById("manual-replenishment-form").addEventListener("submit", submitManualReplenishment);
+  document.getElementById("advice-conversion-modal").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget || event.target.closest("[data-close-advice-conversion]")) closeAdviceConversion();
+  });
+  document.getElementById("advice-conversion-form").addEventListener("submit", submitAdviceConversion);
   document.getElementById("mobile-menu").addEventListener("click", () => document.querySelector(".sidebar").classList.toggle("open"));
   document.getElementById("global-search").addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -247,6 +262,8 @@ function bindEvents() {
       closeApprovalModal();
       closeBusinessDetail();
       closeDashboardTrend();
+      closeManualReplenishment();
+      closeAdviceConversion();
       closeNotificationDrawer();
       closePreferences();
     }
@@ -554,6 +571,175 @@ async function loadRisk() {
     <td><span class="tag blue">${escapeHtml(order.customer_tier)}</span></td><td>${number(order.required_qty)} kg</td><td>${escapeHtml(order.due_date)}</td>
     <td>${priorityTag(order.priority)}</td><td>${formatMoney(order.total_amount)}</td></tr>
   `).join("");
+}
+
+function userCan(permission) {
+  const permissions = state.currentUser?.permissions || [];
+  return permissions.includes("*") || permissions.includes(permission);
+}
+
+function localDateValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function replenishmentContextHtml(payload = null) {
+  const risk = state.risk;
+  if (!risk) return `<p>风险数据尚未加载，请稍后重试。</p>`;
+  const metrics = risk.metrics;
+  const supplier = payload?.suggested_supplier
+    ? `<div><span>建议供应商</span><strong>${escapeHtml(payload.suggested_supplier)}</strong></div>`
+    : "";
+  return `<div><span>物料</span><strong>${escapeHtml(risk.material.name)} · ${escapeHtml(risk.material.code)}</strong></div>
+    <div><span>库存 / 安全线</span><strong>${number(metrics.current_stock)} / ${number(metrics.safety_stock)} ${escapeHtml(risk.material.unit)}</strong></div>
+    <div><span>预计缺口</span><strong>${number(metrics.shortage)} ${escapeHtml(risk.material.unit)}</strong></div>
+    <div><span>受影响订单</span><strong>${number(metrics.affected_orders)} 张</strong></div>${supplier}`;
+}
+
+async function loadSupplierOptions(selectId) {
+  if (!state.suppliers.length) {
+    const response = await api("/api/business?type=suppliers");
+    state.suppliers = response.items || [];
+  }
+  const select = document.getElementById(selectId);
+  select.innerHTML = `<option value="">请选择供应商</option>${state.suppliers.map((supplier) => `<option value="${supplier.id}">${escapeHtml(supplier.name)} · ${escapeHtml(supplier.rating)}级 · ${number(supplier.lead_days)}天</option>`).join("")}`;
+}
+
+async function openManualReplenishment(trigger) {
+  if (!state.risk) {
+    try { await loadRisk(); } catch (error) { toast(error.message, "error"); return; }
+  }
+  const formal = userCan("purchase.create");
+  const form = document.getElementById("manual-replenishment-form");
+  form.reset();
+  state.manualReplenishmentTrigger = trigger;
+  document.getElementById("manual-replenishment-context").innerHTML = replenishmentContextHtml();
+  document.getElementById("manual-expected-date").min = localDateValue();
+  document.getElementById("manual-supplier-select-label").classList.toggle("hidden", !formal);
+  document.getElementById("manual-supplier-text-label").classList.toggle("hidden", formal);
+  document.getElementById("manual-supplier-select").required = formal;
+  document.getElementById("manual-supplier-text").required = !formal;
+  document.getElementById("manual-role-hint").textContent = formal
+    ? `当前身份为${state.currentUser.title}，提交后将直接进入正式审批。`
+    : `当前身份为${state.currentUser.title}，提交后先进入审批中心，等待采购人员复核转换。`;
+  document.getElementById("manual-replenishment-submit").textContent = formal ? "提交正式审批" : "提交管理建议";
+  try {
+    if (formal) await loadSupplierOptions("manual-supplier-select");
+  } catch (error) {
+    toast(error.message, "error");
+    return;
+  }
+  const modal = document.getElementById("manual-replenishment-modal");
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  document.getElementById("manual-quantity").focus();
+}
+
+function closeManualReplenishment({ restoreFocus = true } = {}) {
+  const modal = document.getElementById("manual-replenishment-modal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  const trigger = state.manualReplenishmentTrigger;
+  state.manualReplenishmentTrigger = null;
+  if (restoreFocus && trigger?.isConnected) trigger.focus();
+}
+
+async function submitManualReplenishment(event) {
+  event.preventDefault();
+  const formal = userCan("purchase.create");
+  const button = document.getElementById("manual-replenishment-submit");
+  const body = {
+    material_code: state.risk?.material?.code || "M-AL-6061",
+    quantity: document.getElementById("manual-quantity").value,
+    expected_date: document.getElementById("manual-expected-date").value,
+    urgency: document.getElementById("manual-urgency").value,
+    situation: document.getElementById("manual-situation").value.trim(),
+    rationale: document.getElementById("manual-rationale").value.trim(),
+  };
+  if (formal) body.supplier_id = Number(document.getElementById("manual-supplier-select").value);
+  else body.suggested_supplier = document.getElementById("manual-supplier-text").value.trim();
+  button.disabled = true;
+  try {
+    const result = await api("/api/replenishment/manual", { method: "POST", body });
+    closeManualReplenishment({ restoreFocus: false });
+    toast(result.mode === "advice" ? `管理建议 #${result.approval.id} 已提交` : `正式审批 #${result.approval.id} 已创建`);
+    await Promise.all([loadApprovals(), loadDashboard()]);
+    switchView("approvals");
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function openAdviceConversion(id, trigger) {
+  const item = state.approvals.find((approval) => approval.id === id);
+  if (!item) return;
+  state.selectedAdvice = item;
+  state.adviceConversionTrigger = trigger;
+  const payload = item.payload || {};
+  const form = document.getElementById("advice-conversion-form");
+  form.reset();
+  document.getElementById("advice-conversion-context").innerHTML = replenishmentContextHtml(payload);
+  document.getElementById("conversion-quantity").value = payload.quantity || "";
+  document.getElementById("conversion-expected-date").min = localDateValue();
+  document.getElementById("conversion-expected-date").value = payload.expected_date || "";
+  document.getElementById("conversion-urgency").value = payload.urgency || "一般";
+  document.getElementById("conversion-situation").value = payload.situation || "";
+  document.getElementById("conversion-rationale").value = payload.rationale || "";
+  try {
+    await loadSupplierOptions("conversion-supplier");
+    const matched = state.suppliers.find((supplier) => supplier.name === payload.suggested_supplier);
+    if (matched) document.getElementById("conversion-supplier").value = String(matched.id);
+  } catch (error) {
+    toast(error.message, "error");
+    state.selectedAdvice = null;
+    return;
+  }
+  const modal = document.getElementById("advice-conversion-modal");
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  document.getElementById("conversion-quantity").focus();
+}
+
+function closeAdviceConversion({ restoreFocus = true } = {}) {
+  const modal = document.getElementById("advice-conversion-modal");
+  if (!modal || modal.classList.contains("hidden")) return;
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  state.selectedAdvice = null;
+  const trigger = state.adviceConversionTrigger;
+  state.adviceConversionTrigger = null;
+  if (restoreFocus && trigger?.isConnected) trigger.focus();
+}
+
+async function submitAdviceConversion(event) {
+  event.preventDefault();
+  if (!state.selectedAdvice) return;
+  const button = document.getElementById("advice-conversion-submit");
+  const body = {
+    material_code: state.selectedAdvice.payload?.material_code || "M-AL-6061",
+    quantity: document.getElementById("conversion-quantity").value,
+    supplier_id: Number(document.getElementById("conversion-supplier").value),
+    expected_date: document.getElementById("conversion-expected-date").value,
+    urgency: document.getElementById("conversion-urgency").value,
+    situation: document.getElementById("conversion-situation").value.trim(),
+    rationale: document.getElementById("conversion-rationale").value.trim(),
+  };
+  button.disabled = true;
+  try {
+    const result = await api(`/api/replenishment/advice/${state.selectedAdvice.id}/convert`, { method: "POST", body });
+    closeAdviceConversion({ restoreFocus: false });
+    toast(`正式补货审批 #${result.approval.id} 已创建`);
+    await Promise.all([loadApprovals(), loadDashboard()]);
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderImpactGraph(chain) {
@@ -933,7 +1119,7 @@ function dueDateStatus(value) {
 async function loadApprovals() {
   const { approvals } = await api("/api/approvals");
   state.approvals = approvals;
-  const pending = approvals.filter((item) => item.status === "pending").length;
+  const pending = approvals.filter((item) => ["pending", "pending_review"].includes(item.status)).length;
   const completed = approvals.length - pending;
   document.getElementById("pending-count").textContent = pending;
   document.getElementById("completed-count").textContent = completed;
@@ -941,16 +1127,41 @@ async function loadApprovals() {
   const container = document.getElementById("approval-list");
   container.innerHTML = approvals.length ? approvals.map(renderApprovalCard).join("") : `<div class="empty-state"><div><span>✓</span><strong>没有待处理审批</strong></div></div>`;
   container.querySelectorAll("[data-approval-id]").forEach((button) => button.addEventListener("click", () => openApprovalModal(Number(button.dataset.approvalId))));
+  container.querySelectorAll("[data-advice-id]").forEach((button) => button.addEventListener("click", () => openAdviceConversion(Number(button.dataset.adviceId), button)));
 }
 
 function renderApprovalCard(item) {
-  const data = Object.entries(item.payload || {}).slice(0, 5).map(([key, value]) => `<span>${escapeHtml(fieldLabel(key))}：${escapeHtml(Array.isArray(value) ? value.join("、") : value)}</span>`).join("");
-  const actions = item.status === "pending"
-    ? state.currentUser.role === "admin"
-      ? `<button class="button primary" data-approval-id="${item.id}">查看并审批</button><small>批准后由 AI 执行业务事务</small>`
-      : `<span class="tag amber">等待管理员审批</span><small>当前角色可查看但无审批权</small>`
-    : `<span class="tag ${item.status === "approved" ? "green" : "red"}">${item.status === "approved" ? "已批准并执行" : "已驳回"}</span><small>${escapeHtml(item.decision_note || "审批流程已结束")}</small>`;
-  return `<article class="approval-card ${item.status}"><div class="approval-main"><div class="approval-top"><div class="approval-title"><span class="approval-icon">${item.action_type.startsWith("purchase") ? "＋" : "↗"}</span><div><strong>${escapeHtml(item.action_label)}</strong><small>#${item.id} · ${escapeHtml(item.requester_name || "系统")} 发起 · ${formatDateTime(item.created_at)}</small></div></div><span class="tag red">HIGH RISK</span></div><p class="approval-reason">${escapeHtml(item.reason)}</p><div class="approval-data">${data}</div></div><div class="approval-actions">${actions}</div></article>`;
+  const payload = item.payload || {};
+  const isAdvice = item.action_type === "purchase.replenishment_advice";
+  const isManual = payload.source === "manual" || isAdvice;
+  const data = approvalDataHtml(payload);
+  let actions;
+  if (item.status === "pending_review") {
+    actions = userCan("purchase.create")
+      ? `<button class="button primary" data-advice-id="${item.id}">查看并转为审批</button><small>复核供应商与数量后创建正式审批</small>`
+      : `<span class="tag amber">等待采购确认</span><small>采购人员将复核并转换为正式审批</small>`;
+  } else if (item.status === "pending") {
+    actions = userCan("approval.decide")
+      ? `<button class="button primary" data-approval-id="${item.id}">查看并审批</button><small>批准后由${isManual ? "本地业务系统" : "AI"}执行</small>`
+      : `<span class="tag amber">等待管理员审批</span><small>当前角色可查看但无审批权</small>`;
+  } else if (item.status === "converted") {
+    actions = `<span class="tag blue">已转正式审批</span><small>${escapeHtml(item.decision_note || "采购已完成复核")}</small>`;
+  } else {
+    actions = `<span class="tag ${item.status === "approved" ? "green" : "red"}">${item.status === "approved" ? "已批准并执行" : "已驳回"}</span><small>${escapeHtml(item.decision_note || "审批流程已结束")}</small>`;
+  }
+  const riskClass = item.risk_level === "medium" ? "amber" : "red";
+  const tags = `<div class="approval-tag-stack">${isManual ? `<span class="tag blue">HUMAN</span>` : `<span class="tag gray">AI</span>`}<span class="tag ${riskClass}">${escapeHtml(String(item.risk_level || "high").toUpperCase())} RISK</span></div>`;
+  return `<article class="approval-card ${item.status}"><div class="approval-main"><div class="approval-top"><div class="approval-title"><span class="approval-icon">${item.action_type.startsWith("purchase") ? "＋" : "↗"}</span><div><strong>${escapeHtml(item.action_label)}</strong><small>#${item.id} · ${escapeHtml(item.requester_name || "系统")} 发起 · ${formatDateTime(item.created_at)}</small></div></div>${tags}</div><p class="approval-reason">${escapeHtml(item.reason)}</p><div class="approval-data">${data}</div></div><div class="approval-actions">${actions}</div></article>`;
+}
+
+function approvalDataHtml(payload) {
+  const keys = ["material_code", "quantity", "suggested_supplier", "supplier_id", "expected_date", "urgency", "situation", "rationale", "order_ids"];
+  return keys.filter((key) => payload[key] !== undefined && payload[key] !== "").map((key) => {
+    let value = payload[key];
+    if (key === "supplier_id") value = state.suppliers.find((supplier) => supplier.id === Number(value))?.name || `#${value}`;
+    if (Array.isArray(value)) value = value.join("、");
+    return `<span>${escapeHtml(fieldLabel(key))}：${escapeHtml(value)}</span>`;
+  }).join("");
 }
 
 function openApprovalModal(id) {
@@ -958,7 +1169,8 @@ function openApprovalModal(id) {
   if (!item) return;
   state.selectedApproval = item;
   document.getElementById("modal-title").textContent = item.action_label;
-  document.getElementById("modal-body").innerHTML = `<div class="modal-body-card"><p><strong>申请原因：</strong>${escapeHtml(item.reason)}</p><p><strong>发起人：</strong>${escapeHtml(item.requester_name)}</p><p><strong>执行参数：</strong>${escapeHtml(JSON.stringify(item.payload))}</p><p><strong>安全说明：</strong>批准后将在单个 SQLite 事务中执行，并写入完整审计记录。</p></div>`;
+  const source = item.payload?.source === "manual" ? "人工方案" : "AI 方案";
+  document.getElementById("modal-body").innerHTML = `<div class="modal-body-card"><p><strong>方案来源：</strong>${source}</p><p><strong>申请原因：</strong>${escapeHtml(item.reason)}</p><p><strong>发起人：</strong>${escapeHtml(item.requester_name)}</p><div class="approval-data modal-approval-data">${approvalDataHtml(item.payload || {})}</div><p><strong>安全说明：</strong>批准后将在单个 SQLite 事务中执行，并写入完整审计记录。</p></div>`;
   document.getElementById("approval-note").value = "已核对风险影响与执行参数，同意按方案执行。";
   document.getElementById("approval-modal").classList.remove("hidden");
 }
@@ -970,11 +1182,12 @@ function closeApprovalModal() {
 
 async function decideSelectedApproval(decision) {
   if (!state.selectedApproval) return;
+  const isManual = state.selectedApproval.payload?.source === "manual";
   const note = document.getElementById("approval-note").value.trim();
   try {
     const result = await api(`/api/approvals/${state.selectedApproval.id}/decision`, { method: "POST", body: { decision, note } });
     closeApprovalModal();
-    toast(decision === "approved" ? "审批通过，AI 已完成业务执行" : "审批已驳回");
+    toast(decision === "approved" ? `审批通过，${isManual ? "本地业务系统" : "AI"}已完成业务执行` : "审批已驳回");
     await Promise.all([loadApprovals(), loadDashboard(), loadRisk()]);
     if (result.execution?.purchase_order) toast(`采购单 ${result.execution.purchase_order} 已生成`);
   } catch (error) { toast(error.message, "error"); }
@@ -1109,7 +1322,7 @@ function priorityTag(value) {
 
 function statusTag(value) {
   const green = ["已完成", "已出货", "已开票", "已确认", "approved"].includes(value);
-  const amber = ["待审批", "待出货", "待承运", "生产中", "运输中", "pending", "缓解中"].includes(value);
+  const amber = ["待审批", "待出货", "待承运", "生产中", "运输中", "pending", "pending_review", "缓解中"].includes(value);
   return `<span class="tag ${green ? "green" : amber ? "amber" : "blue"}">${escapeHtml(value)}</span>`;
 }
 
@@ -1125,9 +1338,10 @@ function actionLabel(action) {
   return ({
     "demo.initialized": "演示环境初始化", "demo.reset": "演示数据重置", "risk.detected": "检测到供应链风险",
     "risk.analyze": "AI 分析供应链风险", "purchase.create_replenishment": "补货采购审批",
+    "purchase.replenishment_advice": "人工补货管理建议", "purchase.replenishment_advice.convert": "管理建议转正式审批",
     "fulfillment.ship_and_invoice": "出货与开票审批", "settings.update": "更新 AI 设置",
     "dashboard.get": "读取经营总览", "permissions.describe": "查询身份权限",
   })[action] || action;
 }
-function fieldLabel(key) { return ({ material_code: "物料", quantity: "数量", supplier_id: "供应商", affected_orders: "影响订单", order_ids: "订单 ID" })[key] || key; }
+function fieldLabel(key) { return ({ material_code: "物料", quantity: "数量", supplier_id: "供应商", suggested_supplier: "建议供应商", expected_date: "预计到货", urgency: "紧急程度", situation: "具体情况", rationale: "判断依据", affected_orders: "影响订单", order_ids: "订单 ID" })[key] || key; }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]); }

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+import math
+from datetime import date, datetime
 from typing import Any
 
 from .audit import write_audit
-from .auth import PermissionDenied, UserContext, require
+from .auth import PermissionDenied, UserContext, can, require
 from .db import Database, json_value, utc_now_text
 from .risk import analyze_material_risk, dashboard_data
 
@@ -17,6 +18,9 @@ ACTION_REGISTRY: dict[str, dict[str, Any]] = {
     "permissions.describe": {"permissions": [], "risk": "low", "label": "查看 AI 权限"},
     "purchase.create_replenishment": {
         "permissions": ["purchase.create"], "risk": "high", "label": "创建补货采购单",
+    },
+    "purchase.replenishment_advice": {
+        "permissions": ["replenishment.advise"], "risk": "medium", "label": "人工补货管理建议",
     },
     "fulfillment.ship_and_invoice": {
         "permissions": ["shipment.confirm", "invoice.create"], "risk": "high", "label": "确认出货并开票",
@@ -82,6 +86,110 @@ def create_approval(
     return {"mode": "approval", "approval": _parse_approval(approval), "deduplicated": False}
 
 
+def submit_manual_replenishment(
+    db: Database,
+    user: UserContext,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    """提交人工补货方案；采购角色直接形成审批，其他角色先形成管理建议。"""
+    require(user, "replenishment.advise")
+    formal = can(user.role, "purchase.create")
+    normalized = _validate_manual_replenishment(db, params, formal=formal)
+    risk = analyze_material_risk(db, normalized["material_code"])
+    normalized["source"] = "manual"
+    normalized["risk_snapshot"] = {
+        "event_code": risk["event_code"],
+        "severity": risk["severity"],
+        "shortage": risk["metrics"]["shortage"],
+        "affected_orders": risk["metrics"]["affected_orders"],
+        "projected_stock": risk["metrics"]["projected_stock"],
+    }
+    reason = f"{normalized['urgency']}人工补货：{normalized['situation']}"
+    if formal:
+        return create_approval(db, user, "purchase.create_replenishment", normalized, reason)
+
+    action = "purchase.replenishment_advice"
+    key = _idempotency_key(action, user.id, normalized)
+    existing = db.fetch_one("SELECT * FROM approvals WHERE idempotency_key = ?", (key,))
+    if existing:
+        return {"mode": "advice", "approval": _parse_approval(existing), "deduplicated": True}
+    approval_id = db.execute(
+        """INSERT INTO approvals(action_type, requested_by, payload, status, risk_level,
+           reason, created_at, idempotency_key) VALUES (?, ?, ?, 'pending_review', 'medium', ?, ?, ?)""",
+        (action, user.id, json_value(normalized), reason, utc_now_text(), key),
+    )
+    write_audit(
+        db, user, "approval", action, "pending_review",
+        {"approval_id": approval_id, "params": normalized, "reason": reason},
+    )
+    approval = db.fetch_one("SELECT * FROM approvals WHERE id = ?", (approval_id,))
+    return {"mode": "advice", "approval": _parse_approval(approval), "deduplicated": False}
+
+
+def convert_replenishment_advice(
+    db: Database,
+    user: UserContext,
+    advice_id: int,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    """采购人员将管理建议一次性转换为正式补货审批。"""
+    require(user, "purchase.create")
+    existing_advice = db.fetch_one("SELECT * FROM approvals WHERE id = ?", (advice_id,))
+    if (
+        existing_advice
+        and existing_advice["action_type"] == "purchase.replenishment_advice"
+        and existing_advice["status"] == "converted"
+    ):
+        advice_payload = json.loads(existing_advice["payload"])
+        converted = db.fetch_one(
+            "SELECT * FROM approvals WHERE id = ?", (advice_payload.get("converted_approval_id"),),
+        )
+        if not converted:
+            raise ValueError("建议的转换记录不完整")
+        return {"mode": "approval", "approval": _parse_approval(converted), "deduplicated": True}
+    normalized = _validate_manual_replenishment(db, params, formal=True)
+    with db.transaction() as conn:
+        row = conn.execute("SELECT * FROM approvals WHERE id = ?", (advice_id,)).fetchone()
+        if not row or row["action_type"] != "purchase.replenishment_advice":
+            raise ValueError("人工补货建议不存在")
+        advice = dict(row)
+        advice_payload = json.loads(advice["payload"])
+        if advice["status"] == "converted":
+            converted_id = advice_payload.get("converted_approval_id")
+            converted = conn.execute("SELECT * FROM approvals WHERE id = ?", (converted_id,)).fetchone()
+            if not converted:
+                raise ValueError("建议的转换记录不完整")
+            return {"mode": "approval", "approval": _parse_approval(dict(converted)), "deduplicated": True}
+        if advice["status"] != "pending_review":
+            raise ValueError("只有待采购确认的建议可以转换")
+
+        normalized["source"] = "manual"
+        normalized["source_advice_id"] = advice_id
+        normalized["risk_snapshot"] = advice_payload.get("risk_snapshot", {})
+        key = _idempotency_key("purchase.create_replenishment", user.id, {"source_advice_id": advice_id})
+        cursor = conn.execute(
+            """INSERT INTO approvals(action_type, requested_by, payload, status, risk_level,
+               reason, created_at, idempotency_key) VALUES (?, ?, ?, 'pending', 'high', ?, ?, ?)""",
+            (
+                "purchase.create_replenishment", user.id, json_value(normalized),
+                f"由管理建议 #{advice_id} 转为正式补货审批", utc_now_text(), key,
+            ),
+        )
+        approval_id = int(cursor.lastrowid)
+        advice_payload["converted_approval_id"] = approval_id
+        conn.execute(
+            """UPDATE approvals SET payload = ?, status = 'converted', decided_at = ?, decided_by = ?,
+               decision_note = ? WHERE id = ?""",
+            (json_value(advice_payload), utc_now_text(), user.id, f"已转为正式审批 #{approval_id}", advice_id),
+        )
+        _insert_audit(
+            conn, user, "approval", "purchase.replenishment_advice.convert", "success",
+            {"advice_id": advice_id, "approval_id": approval_id, "params": normalized},
+        )
+        converted = conn.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
+    return {"mode": "approval", "approval": _parse_approval(dict(converted)), "deduplicated": False}
+
+
 def list_approvals(db: Database, status: str | None = None) -> list[dict[str, Any]]:
     sql = """SELECT a.*, requester.name AS requester_name, decider.name AS decider_name
              FROM approvals a
@@ -91,7 +199,7 @@ def list_approvals(db: Database, status: str | None = None) -> list[dict[str, An
     if status:
         sql += " WHERE a.status = ?"
         params = (status,)
-    sql += " ORDER BY CASE a.status WHEN 'pending' THEN 1 ELSE 2 END, a.id DESC"
+    sql += " ORDER BY CASE a.status WHEN 'pending_review' THEN 1 WHEN 'pending' THEN 2 ELSE 3 END, a.id DESC"
     return [_parse_approval(row) for row in db.fetch_all(sql, params)]
 
 
@@ -140,20 +248,35 @@ def _execute_approved(conn, approval: dict[str, Any]) -> dict[str, Any]:
         ).fetchone()
         if not material:
             raise ValueError("审批对应物料不存在")
-        po_number = f"PO-AI-{datetime.now():%m%d}-{approval['id']:04d}"
+        source = payload.get("source", "ai")
+        quantity = _positive_number(payload.get("quantity"), "补货数量")
+        supplier_id = int(payload.get("supplier_id", 1))
+        supplier = conn.execute("SELECT id FROM suppliers WHERE id = ?", (supplier_id,)).fetchone()
+        if not supplier:
+            raise ValueError("补货供应商不存在")
+        expected_date = payload.get("expected_date") if source == "manual" else None
+        if expected_date:
+            _valid_expected_date(expected_date, allow_past=True)
+        else:
+            expected_date = conn.execute("SELECT date('now', '+7 day') AS value").fetchone()["value"]
+        prefix = "MAN" if source == "manual" else "AI"
+        po_number = f"PO-{prefix}-{datetime.now():%m%d}-{approval['id']:04d}"
         cursor = conn.execute(
             """INSERT INTO purchase_orders(po_number, supplier_id, status, expected_date,
-               total_amount, created_at) VALUES (?, ?, '已确认', date('now', '+7 day'), ?, ?)""",
-            (po_number, payload.get("supplier_id", 1),
-             float(payload["quantity"]) * float(material["unit_cost"]), utc_now_text()),
+               total_amount, created_at) VALUES (?, ?, '已确认', ?, ?, ?)""",
+            (po_number, supplier_id, expected_date,
+             quantity * float(material["unit_cost"]), utc_now_text()),
         )
         conn.execute(
             """INSERT INTO purchase_order_items(purchase_order_id, material_id, quantity, received_quantity)
                VALUES (?, ?, ?, 0)""",
-            (cursor.lastrowid, material["id"], payload["quantity"]),
+            (cursor.lastrowid, material["id"], quantity),
         )
         conn.execute("UPDATE risk_events SET status = '缓解中' WHERE material_id = ?", (material["id"],))
-        return {"purchase_order": po_number, "quantity": payload["quantity"], "status": "已确认"}
+        return {
+            "purchase_order": po_number, "quantity": quantity, "supplier_id": supplier_id,
+            "expected_date": expected_date, "source": source, "status": "已确认",
+        }
     if action == "fulfillment.ship_and_invoice":
         order_ids = payload.get("order_ids", [])
         if not order_ids:
@@ -204,3 +327,87 @@ def _parse_approval(row: dict[str, Any] | None) -> dict[str, Any]:
     result["action_label"] = ACTION_REGISTRY.get(result["action_type"], {}).get("label", result["action_type"])
     return result
 
+
+def _validate_manual_replenishment(
+    db: Database,
+    params: dict[str, Any],
+    *,
+    formal: bool,
+) -> dict[str, Any]:
+    material_code = str(params.get("material_code", "M-AL-6061")).strip()
+    material = db.fetch_one("SELECT code FROM materials WHERE code = ?", (material_code,))
+    if not material:
+        raise ValueError(f"未找到物料：{material_code}")
+    expected_date = str(params.get("expected_date", "")).strip()
+    _valid_expected_date(expected_date)
+    urgency = str(params.get("urgency", "")).strip()
+    if urgency not in {"一般", "紧急", "特急"}:
+        raise ValueError("紧急程度必须是一般、紧急或特急")
+    situation = _required_text(params.get("situation"), "具体情况", 1000)
+    rationale = _required_text(params.get("rationale"), "判断依据", 1000)
+    result: dict[str, Any] = {
+        "material_code": material_code,
+        "quantity": _positive_number(params.get("quantity"), "补货数量"),
+        "expected_date": expected_date,
+        "urgency": urgency,
+        "situation": situation,
+        "rationale": rationale,
+    }
+    if formal:
+        try:
+            supplier_id = int(params.get("supplier_id"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("请选择系统供应商") from exc
+        if not db.fetch_one("SELECT id FROM suppliers WHERE id = ?", (supplier_id,)):
+            raise ValueError("补货供应商不存在")
+        result["supplier_id"] = supplier_id
+    else:
+        result["suggested_supplier"] = _required_text(
+            params.get("suggested_supplier"), "建议供应商", 100,
+        )
+    return result
+
+
+def _positive_number(value: Any, label: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label}必须是数字") from exc
+    if not math.isfinite(number) or number <= 0:
+        raise ValueError(f"{label}必须大于 0")
+    return number
+
+
+def _valid_expected_date(value: Any, *, allow_past: bool = False) -> str:
+    text = str(value or "").strip()
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError("预计到货日期格式无效") from exc
+    if not allow_past and parsed < date.today():
+        raise ValueError("预计到货日期不能早于今天")
+    return text
+
+
+def _required_text(value: Any, label: str, limit: int) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"请填写{label}")
+    if len(text) > limit:
+        raise ValueError(f"{label}不能超过 {limit} 个字")
+    return text
+
+
+def _insert_audit(
+    conn,
+    user: UserContext,
+    event_type: str,
+    action: str,
+    status: str,
+    details: dict[str, Any],
+) -> None:
+    conn.execute(
+        """INSERT INTO audit_logs(timestamp, user_id, role, event_type, action, status,
+           details, provider, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, 'local', 0)""",
+        (utc_now_text(), user.id, user.role, event_type, action, status, json_value(details)),
+    )

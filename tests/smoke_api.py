@@ -91,6 +91,33 @@ def run(quick: bool) -> None:
             assert risk["metrics"]["shortage"] == 520
             assert risk["metrics"]["affected_orders"] == 3
 
+            advice = request_json(
+                base_url + "/api/replenishment/manual",
+                {
+                    "user_id": 3, "material_code": "M-AL-6061", "quantity": 660,
+                    "suggested_supplier": "华东铝业集团", "expected_date": "2099-08-20",
+                    "urgency": "紧急", "situation": "仓库盘点确认缺口扩大。",
+                    "rationale": "依据现场盘点和历史耗用判断。",
+                },
+            )
+            assert advice["mode"] == "advice"
+            assert advice["approval"]["status"] == "pending_review"
+            converted = request_json(
+                base_url + f"/api/replenishment/advice/{advice['approval']['id']}/convert",
+                {
+                    "user_id": 2, "material_code": "M-AL-6061", "quantity": 660,
+                    "supplier_id": 1, "expected_date": "2099-08-20", "urgency": "紧急",
+                    "situation": "仓库盘点确认缺口扩大。", "rationale": "采购复核确认。",
+                },
+            )
+            manual_approval_id = converted["approval"]["id"]
+            manual_approved = request_json(
+                base_url + f"/api/approvals/{manual_approval_id}/decision",
+                {"user_id": 1, "decision": "approved", "note": "冒烟测试批准人工方案"},
+            )
+            assert manual_approved["execution"]["purchase_order"].startswith("PO-MAN-")
+            assert manual_approved["execution"]["expected_date"] == "2099-08-20"
+
             ai = request_json(
                 base_url + "/api/ai/command",
                 {"user_id": 1, "command": "分析航空铝板缺料风险和影响订单"},
@@ -140,7 +167,7 @@ def run(quick: bool) -> None:
 
             audits = request_json(base_url + "/api/audits?user_id=1&limit=100")
             assert len(audits["audits"]) >= 6
-            print(f"FULL OK · dashboard/details/risk/ai/approval/permission/audit · {base_url}")
+            print(f"FULL OK · dashboard/details/risk/manual/ai/approval/permission/audit · {base_url}")
         finally:
             process.terminate()
             try:

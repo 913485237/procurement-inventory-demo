@@ -112,7 +112,7 @@ def dashboard_data(db: Database) -> dict[str, Any]:
            FROM sales_orders"""
     )
     pending_approvals = db.fetch_one(
-        "SELECT COUNT(*) AS count FROM approvals WHERE status = 'pending'"
+        "SELECT COUNT(*) AS count FROM approvals WHERE status IN ('pending', 'pending_review')"
     )["count"]
     active_risks = db.fetch_one(
         "SELECT COUNT(*) AS count FROM risk_events WHERE status NOT IN ('已关闭','已解决')"

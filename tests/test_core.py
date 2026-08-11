@@ -7,7 +7,13 @@ from pathlib import Path
 
 from backend.auth import PermissionDenied, get_user
 from backend.db import Database, json_value, utc_now_text
-from backend.erp import create_approval, decide_approval, list_approvals
+from backend.erp import (
+    convert_replenishment_advice,
+    create_approval,
+    decide_approval,
+    list_approvals,
+    submit_manual_replenishment,
+)
 from backend.risk import analyze_material_risk, business_detail, dashboard_data, order_detail
 
 
@@ -18,6 +24,7 @@ class CoreWorkflowTest(unittest.TestCase):
         self.db.initialize()
         self.admin = get_user(self.db, 1)
         self.procurement = get_user(self.db, 2)
+        self.warehouse = get_user(self.db, 3)
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
@@ -95,6 +102,98 @@ class CoreWorkflowTest(unittest.TestCase):
         approval_id = list_approvals(self.db, "pending")[0]["id"]
         with self.assertRaises(PermissionDenied):
             decide_approval(self.db, self.procurement, approval_id, "approved")
+
+    def test_warehouse_submits_advice_without_ai_interaction(self) -> None:
+        result = submit_manual_replenishment(
+            self.db,
+            self.warehouse,
+            {
+                "material_code": "M-AL-6061",
+                "quantity": 640,
+                "suggested_supplier": "现场长期合作供应商",
+                "expected_date": "2099-08-20",
+                "urgency": "紧急",
+                "situation": "现有库存批次存在额外损耗，需要按现场情况补足。",
+                "rationale": "依据近三次同类任务的实际耗用记录。",
+            },
+        )
+        self.assertEqual(result["mode"], "advice")
+        self.assertEqual(result["approval"]["status"], "pending_review")
+        self.assertEqual(result["approval"]["risk_level"], "medium")
+        self.assertEqual(result["approval"]["payload"]["source"], "manual")
+        self.assertEqual(self.db.fetch_one("SELECT COUNT(*) AS count FROM ai_interactions")["count"], 0)
+
+    def test_procurement_submits_manual_plan_and_admin_executes_exact_values(self) -> None:
+        result = submit_manual_replenishment(
+            self.db,
+            self.procurement,
+            {
+                "material_code": "M-AL-6061",
+                "quantity": 615,
+                "supplier_id": 4,
+                "expected_date": "2099-08-21",
+                "urgency": "特急",
+                "situation": "管理者确认需要补货。",
+                "rationale": "结合现场损耗与客户优先级判断。",
+            },
+        )
+        self.assertEqual(result["mode"], "approval")
+        approved = decide_approval(
+            self.db, self.admin, result["approval"]["id"], "approved", "批准人工方案",
+        )
+        self.assertEqual(approved["execution"]["source"], "manual")
+        self.assertEqual(approved["execution"]["quantity"], 615)
+        self.assertEqual(approved["execution"]["supplier_id"], 4)
+        self.assertEqual(approved["execution"]["expected_date"], "2099-08-21")
+        self.assertTrue(approved["execution"]["purchase_order"].startswith("PO-MAN-"))
+
+    def test_procurement_converts_advice_exactly_once(self) -> None:
+        advice = submit_manual_replenishment(
+            self.db,
+            self.warehouse,
+            {
+                "material_code": "M-AL-6061",
+                "quantity": 680,
+                "suggested_supplier": "华东铝业集团",
+                "expected_date": "2099-08-22",
+                "urgency": "紧急",
+                "situation": "仓库盘点确认缺口扩大。",
+                "rationale": "现场盘点和未完成工单共同证明。",
+            },
+        )["approval"]
+        params = {
+            "material_code": "M-AL-6061",
+            "quantity": 680,
+            "supplier_id": 1,
+            "expected_date": "2099-08-22",
+            "urgency": "紧急",
+            "situation": "仓库盘点确认缺口扩大。",
+            "rationale": "采购复核后确认建议有效。",
+        }
+        first = convert_replenishment_advice(self.db, self.procurement, advice["id"], params)
+        second = convert_replenishment_advice(self.db, self.procurement, advice["id"], {})
+        self.assertFalse(first["deduplicated"])
+        self.assertTrue(second["deduplicated"])
+        self.assertEqual(first["approval"]["id"], second["approval"]["id"])
+        converted = self.db.fetch_one("SELECT status, payload FROM approvals WHERE id = ?", (advice["id"],))
+        self.assertEqual(converted["status"], "converted")
+        self.assertEqual(json.loads(converted["payload"])["converted_approval_id"], first["approval"]["id"])
+
+    def test_manual_plan_validation_rejects_invalid_quantity(self) -> None:
+        with self.assertRaisesRegex(ValueError, "补货数量必须大于 0"):
+            submit_manual_replenishment(
+                self.db,
+                self.warehouse,
+                {
+                    "material_code": "M-AL-6061",
+                    "quantity": 0,
+                    "suggested_supplier": "供应商",
+                    "expected_date": "2099-08-20",
+                    "urgency": "一般",
+                    "situation": "现场确认。",
+                    "rationale": "经验判断。",
+                },
+            )
 
     def test_failed_execution_rolls_back_approval(self) -> None:
         approval_id = self.db.execute(

@@ -12,9 +12,10 @@
 
 ## 先看什么
 
-- [采购岗位五分钟演示脚本](docs/采购岗位五分钟演示脚本.md)：按采购人员视角走完一条完整补货流程。
-- [可交付版本与简历定位设计](docs/superpowers/specs/2026-08-13-procurement-deliverable-resume-design.md)：项目边界、交付标准和简历口径。
-- [五分钟客户演示脚本](docs/五分钟客户演示脚本.md)：完整功能演示和权限边界说明。
+- [采购岗位五分钟演示脚本](docs/guides/采购岗位五分钟演示脚本.md)：按采购人员视角走完一条完整补货流程。
+- [可交付版本与简历定位设计](docs/design/2026-08-13-procurement-deliverable-resume-design.md)：项目边界、交付标准和简历口径。
+- [五分钟客户演示脚本](docs/guides/五分钟客户演示脚本.md)：完整功能演示和权限边界说明。
+- [运行版使用说明](docs/guides/运行版使用说明.md)：面向解压体验者的最短启动路径。
 
 ## 核心流程
 
@@ -117,7 +118,7 @@ backend/       数据库、权限、风险、ERP、AI 与审计
 web/           本地浏览器界面
 tests/         标准库 unittest 测试
 scripts/       启动与测试脚本
-docs/          业务流程、交付设计和演示脚本
+docs/          使用指南、业务设计和实现计划
 data/          本地 SQLite 演示数据
 app.py         HTTP 服务入口
 Dockerfile     容器启动配置

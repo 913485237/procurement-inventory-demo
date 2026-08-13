@@ -12,4 +12,5 @@ docs
 task_plan.md
 findings.md
 progress.md
-
+dist
+.package-work

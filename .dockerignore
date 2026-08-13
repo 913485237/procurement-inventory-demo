@@ -1,0 +1,15 @@
+.git
+.gitignore
+__pycache__
+*.py[cod]
+.pytest_cache
+config.json
+logs
+data/*.db
+data/*.db-*
+tests
+docs
+task_plan.md
+findings.md
+progress.md
+

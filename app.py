@@ -260,8 +260,8 @@ def run_server(host: str, port: int, open_browser: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Aether AI 原生制造业 ERP")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8765")))
     parser.add_argument("--open", action="store_true", help="启动后打开浏览器")
     parser.add_argument("--reset-data", action="store_true", help="启动前重置演示数据")
     args = parser.parse_args()

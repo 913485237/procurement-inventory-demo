@@ -13,6 +13,7 @@
 | 3. 线上演示准备 | in_progress | 有稳定演示数据、恢复机制、错误反馈和部署说明；Render 公开地址可访问 |
 | 4. GitHub 交付材料 | in_progress | README、流程图、截图、演示脚本和项目边界说明完整且无乱码 |
 | 5. 验证与简历资产 | pending | 测试通过，五分钟演示可复现，形成简历项目描述和面试口径 |
+| 6. 项目清理与双版本打包 | in_progress | 项目目录完成归类，源码版与运行版 ZIP 均通过解压运行验收 |
 
 ## 当前决策
 
@@ -68,3 +69,10 @@
 | 本机未安装 GitHub CLI，应用内浏览器与 Edge 扩展控制 GitHub 表单持续超时 | 2 | 已确认账号登录并打开新仓库页面；请用户手动提交空公开仓库，随后使用标准 Git 关联和推送 |
 | GitHub CLI 首次创建时未识别存在所有者差异的本地仓库 | 1 | 使用单次进程级 `safe.directory` 配置重试，未修改全局 Git 配置 |
 | Windows 下 `python -m py_compile backend\\*.py` 不展开通配符 | 1 | 改用 `python -m compileall -q app.py backend`，语法检查通过 |
+
+## 当前打包决策
+
+- 用户选择同时生成源码版和运行版压缩包。
+- 本地 `.git/` 保留但不打包。
+- 删除缓存、自动生成数据库和最终不再需要的过程记录。
+- 文档归类到 `docs/guides/`、`docs/design/` 和 `docs/implementation/`。

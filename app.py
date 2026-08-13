@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parent
 WEB_ROOT = ROOT / "web"
 DB_PATH = Path(os.environ.get("ERP_DB_PATH", ROOT / "data" / "erp_demo.db"))
 CONFIG_PATH = Path(os.environ.get("ERP_CONFIG_PATH", ROOT / "config.json"))
+PUBLIC_DEMO = os.environ.get("PUBLIC_DEMO", "").strip().lower() in {"1", "true", "yes", "on"}
 
 db = Database(DB_PATH)
 config_store = ConfigStore(CONFIG_PATH)
@@ -43,6 +44,15 @@ BUSINESS_PERMISSIONS = {
     "shipments": "shipment.read",
     "invoices": "invoice.read",
 }
+
+
+class PublicDemoReadOnly(Exception):
+    """公开演示环境不允许执行的系统级变更。"""
+
+
+def require_private_mode(action: str) -> None:
+    if PUBLIC_DEMO:
+        raise PublicDemoReadOnly(f"公开演示模式禁止{action}")
 
 
 class ERPRequestHandler(BaseHTTPRequestHandler):
@@ -94,6 +104,7 @@ class ERPRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(result)
                 return
             if parsed.path == "/api/settings":
+                require_private_mode("修改 AI 配置")
                 user = get_user(db, int(body.get("user_id", 1)))
                 require(user, "system.configure")
                 updates = body.get("settings", {})
@@ -104,6 +115,7 @@ class ERPRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"settings": saved, "status": ai_service.status()})
                 return
             if parsed.path == "/api/reset":
+                require_private_mode("重置共享演示数据")
                 user = get_user(db, int(body.get("user_id", 1)))
                 require(user, "system.reset")
                 if body.get("confirm") != "RESET":
@@ -121,7 +133,7 @@ class ERPRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/health":
             self._send_json({
                 "status": "ok", "service": "Aether AI ERP", "database": str(DB_PATH.name),
-                "ai": ai_service.status(),
+                "ai": ai_service.status(), "public_demo": PUBLIC_DEMO,
             })
             return
         if path == "/api/users":
@@ -229,6 +241,11 @@ class ERPRequestHandler(BaseHTTPRequestHandler):
         if isinstance(exc, PermissionDenied):
             self._send_json(
                 {"error": str(exc), "code": "PERMISSION_DENIED", "permission": exc.permission, "role": exc.role},
+                HTTPStatus.FORBIDDEN,
+            )
+        elif isinstance(exc, PublicDemoReadOnly):
+            self._send_json(
+                {"error": str(exc), "code": "PUBLIC_DEMO_READ_ONLY"},
                 HTTPStatus.FORBIDDEN,
             )
         elif isinstance(exc, (ValueError, KeyError)):

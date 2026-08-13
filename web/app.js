@@ -1,5 +1,6 @@
 const state = {
   userId: 1,
+  publicDemo: false,
   users: [],
   currentUser: null,
   activeView: "dashboard",
@@ -121,7 +122,9 @@ async function init() {
     const [{ users }, health] = await Promise.all([api("/api/users", { userless: true }), api("/api/health", { userless: true })]);
     state.users = users;
     state.currentUser = users[0];
+    state.publicDemo = Boolean(health.public_demo);
     renderUserSwitcher();
+    renderPublicDemoMode();
     renderProviderStatus(health.ai);
     await Promise.all([loadDashboard(), loadRisk(), loadApprovals()]);
   } catch (error) {
@@ -1210,6 +1213,13 @@ async function loadAudit() {
 async function loadSettings() {
   const form = document.getElementById("settings-form");
   const locked = document.getElementById("settings-locked");
+  if (state.publicDemo) {
+    form.classList.add("hidden");
+    locked.classList.remove("hidden");
+    locked.querySelector("h3").textContent = "公开演示模式";
+    locked.querySelector("p").textContent = "可查看审计记录和 AI 运行状态，但不能修改接口配置。";
+    return;
+  }
   if (state.currentUser.role !== "admin") {
     form.classList.add("hidden");
     locked.classList.remove("hidden");
@@ -1232,6 +1242,7 @@ async function loadSettings() {
 
 async function saveSettings(event) {
   event.preventDefault();
+  if (state.publicDemo) { toast("公开演示模式不能修改 AI 配置", "error"); return; }
   const settings = {
     external_enabled: document.getElementById("external-enabled").checked,
     external_base_url: document.getElementById("external-url").value.trim(),
@@ -1261,6 +1272,7 @@ function renderProviderStatus(status) {
 }
 
 async function resetDemo() {
+  if (state.publicDemo) { toast("公开演示模式不能重置共享数据", "error"); return; }
   if (state.currentUser.role !== "admin") { toast("只有管理员可以重置演示数据", "error"); return; }
   if (!window.confirm("确定恢复初始演示数据吗？这只会重建演示数据库，不会修改源码和原视频。")) return;
   try {
@@ -1268,6 +1280,16 @@ async function resetDemo() {
     toast("演示数据已恢复到初始状态");
     await Promise.all([loadDashboard(), loadRisk(), loadApprovals(), loadAudit()]);
   } catch (error) { toast(error.message, "error"); }
+}
+
+function renderPublicDemoMode() {
+  const badge = document.getElementById("demo-mode-badge");
+  const reset = document.getElementById("reset-demo");
+  badge.classList.toggle("hidden", !state.publicDemo);
+  reset.disabled = state.publicDemo;
+  reset.title = state.publicDemo ? "公开演示环境已禁止重置共享数据" : "";
+  if (state.publicDemo) document.body.dataset.publicDemo = "true";
+  else delete document.body.dataset.publicDemo;
 }
 
 function exportBrief() {

@@ -57,8 +57,10 @@ python app.py --open
 
 ```powershell
 docker build -t procurement-demo .
-docker run --rm -p 8765:8765 -e HOST=0.0.0.0 -e PORT=8765 procurement-demo
+docker run --rm -p 8765:8765 procurement-demo
 ```
+
+Docker 镜像默认开启 `PUBLIC_DEMO=true`：访客可以切换虚构角色并完成采购审批，但不能修改 AI 配置或重置共享数据。若只在可信本地环境使用，可通过 `-e PUBLIC_DEMO=false` 恢复完整管理功能。
 
 云平台若自动注入 `PORT` 环境变量，容器会读取该端口启动服务。
 
@@ -118,4 +120,3 @@ Dockerfile     容器启动配置
 ## 简历写法
 
 > 独立设计并开发面向中小企业采购场景的供应链业务管理系统，围绕库存预警、补货决策、供应商选择、采购审批、采购单生成和到货跟踪，构建从库存异常发现到采购执行的完整业务闭环。项目提供 GitHub 源码、本地可复现运行和 Docker 启动方式，使用虚构业务数据模拟采购人员的实际工作流程。
-

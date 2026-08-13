@@ -43,7 +43,17 @@ def wait_until_ready(base_url: str) -> dict:
     raise RuntimeError(f"服务未就绪：{last_error}")
 
 
-def run(quick: bool) -> None:
+def assert_public_demo_blocked(base_url: str, path: str, body: dict) -> None:
+    try:
+        request_json(base_url + path, body)
+        raise AssertionError(f"公开演示模式未拦截：{path}")
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 403
+        payload = json.loads(exc.read().decode("utf-8"))
+        assert payload["code"] == "PUBLIC_DEMO_READ_ONLY"
+
+
+def run(quick: bool, public_demo: bool = False) -> None:
     port = free_port()
     base_url = f"http://127.0.0.1:{port}"
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -56,6 +66,7 @@ def run(quick: bool) -> None:
         environment = os.environ.copy()
         environment["ERP_DB_PATH"] = str(temp / "smoke.db")
         environment["ERP_CONFIG_PATH"] = str(config_path)
+        environment["PUBLIC_DEMO"] = "true" if public_demo else "false"
         process = subprocess.Popen(
             [sys.executable, "app.py", "--host", "127.0.0.1", "--port", str(port)],
             cwd=ROOT,
@@ -66,6 +77,14 @@ def run(quick: bool) -> None:
         try:
             health = wait_until_ready(base_url)
             assert health["status"] == "ok"
+            assert health["public_demo"] is public_demo
+            if public_demo:
+                assert_public_demo_blocked(
+                    base_url, "/api/settings", {"user_id": 1, "settings": {"ollama_enabled": False}},
+                )
+                assert_public_demo_blocked(
+                    base_url, "/api/reset", {"user_id": 1, "confirm": "RESET"},
+                )
             if quick:
                 print(f"QUICK OK · health · {base_url}")
                 return
@@ -180,4 +199,6 @@ def run(quick: bool) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--quick", action="store_true")
-    run(parser.parse_args().quick)
+    parser.add_argument("--public-demo", action="store_true")
+    args = parser.parse_args()
+    run(args.quick, args.public_demo)

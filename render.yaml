@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: procurement-inventory-demo
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PUBLIC_DEMO
+        value: "true"
+      - key: PYTHONUNBUFFERED
+        value: "1"

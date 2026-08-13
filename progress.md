@@ -23,3 +23,5 @@
 - 安装并登录 GitHub CLI 2.97.0，账号为 `913485237`。
 - 创建并推送公开仓库：`https://github.com/913485237/procurement-inventory-demo`。
 - 完成公开性、远程地址、默认分支、仓库描述和主题标签验收。
+- 确定 Render 免费 Docker Web Service 为线上演示平台；开始补充 Blueprint 和一键部署入口。
+- 新增 `render.yaml` 与 README 一键部署入口；语法检查、快速冒烟、19 项单元测试和完整业务冒烟均通过。

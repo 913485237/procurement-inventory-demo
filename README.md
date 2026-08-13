@@ -6,6 +6,10 @@
 
 项目仓库：[github.com/913485237/procurement-inventory-demo](https://github.com/913485237/procurement-inventory-demo)
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2F913485237%2Fprocurement-inventory-demo)
+
+> 在线演示采用公开演示模式。访客可体验完整采购闭环，但不能修改 AI 配置或重置共享数据；免费服务空闲后可能需要约一分钟唤醒。
+
 ## 先看什么
 
 - [采购岗位五分钟演示脚本](docs/采购岗位五分钟演示脚本.md)：按采购人员视角走完一条完整补货流程。
@@ -65,6 +69,10 @@ docker run --rm -p 8765:8765 procurement-demo
 Docker 镜像默认开启 `PUBLIC_DEMO=true`：访客可以切换虚构角色并完成采购审批，但不能修改 AI 配置或重置共享数据。若只在可信本地环境使用，可通过 `-e PUBLIC_DEMO=false` 恢复完整管理功能。
 
 云平台若自动注入 `PORT` 环境变量，容器会读取该端口启动服务。
+
+### Render 一键部署
+
+仓库根目录的 `render.yaml` 已配置 Docker Web Service、`/api/health` 健康检查和公开演示环境变量。点击上方 **Deploy to Render**，审核免费实例配置后即可创建独立演示地址。
 
 ## 演示角色
 

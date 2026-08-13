@@ -43,3 +43,10 @@
 - 浏览器验收确认“仅供演示”标识可见、重置按钮禁用、设置表单隐藏，并显示公开演示说明。
 - 页面无控制台错误；完整公开模式冒烟测试通过。
 - Docker 镜像默认启用公开演示模式；直接运行 Python 时默认保持本地完整管理功能。
+
+## GitHub 发布（2026-08-13）
+
+- 公开仓库：`https://github.com/913485237/procurement-inventory-demo`。
+- 本地 `origin` 已关联 GitHub，默认分支为 `master`。
+- 仓库主题包含 procurement、supply-chain、inventory-management、python 和 sqlite。
+- 推送前已检查 Git 跟踪内容，未检测到 GitHub Token 或 API 密钥；本地配置和 SQLite 数据库均被忽略。

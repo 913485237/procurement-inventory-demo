@@ -20,3 +20,6 @@
 - 已确认用户拥有 GitHub 账号并授权创建公开仓库；本地尚无远程地址。
 - 发布受阻：本机没有 `gh`，应用内浏览器两次加载 GitHub 超时，Chrome 会话不可用。下一步等待用户创建空公开仓库并提供 URL。
 - 已接管用户打开的 Edge GitHub Dashboard 并导航到 `https://github.com/new`；账号已登录，但浏览器扩展读取/操作仓库表单连续超时，未提交创建操作。
+- 安装并登录 GitHub CLI 2.97.0，账号为 `913485237`。
+- 创建并推送公开仓库：`https://github.com/913485237/procurement-inventory-demo`。
+- 完成公开性、远程地址、默认分支、仓库描述和主题标签验收。

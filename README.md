@@ -4,6 +4,8 @@
 
 本项目使用虚构业务数据，提供本地可复现运行方式和 Docker 启动方式，用于展示采购流程梳理、供应商与订单关系设计、权限控制和业务系统落地能力。
 
+项目仓库：[github.com/913485237/procurement-inventory-demo](https://github.com/913485237/procurement-inventory-demo)
+
 ## 先看什么
 
 - [采购岗位五分钟演示脚本](docs/采购岗位五分钟演示脚本.md)：按采购人员视角走完一条完整补货流程。

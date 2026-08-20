@@ -4,11 +4,9 @@
 
 本项目使用虚构业务数据，提供本地可复现运行方式和 Docker 启动方式，用于展示采购流程梳理、供应商与订单关系设计、权限控制和业务系统落地能力。
 
-项目仓库：[github.com/913485237/procurement-inventory-demo](https://github.com/913485237/procurement-inventory-demo)
+本仓库以**本地运行**为主，不需要 GitHub、Render 或其他云端服务。启动后请在本机浏览器访问 [http://127.0.0.1:8765](http://127.0.0.1:8765)。
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2F913485237%2Fprocurement-inventory-demo)
-
-> 在线演示采用公开演示模式。访客可体验完整采购闭环，但不能修改 AI 配置或重置共享数据；免费服务空闲后可能需要约一分钟唤醒。
+> `render.yaml` 仅保留为可选的部署配置；它不会自动创建在线地址。若未自行部署，请不要点击或依赖外网部署链接。
 
 ## 先看什么
 
@@ -50,13 +48,13 @@
 
 ### Windows 本地启动
 
-运行 [启动AI-ERP.bat](启动AI-ERP.bat)，或在项目目录执行：
+双击运行 [启动AI-ERP.bat](启动AI-ERP.bat)，或在项目目录执行：
 
 ```powershell
 python app.py --open
 ```
 
-打开 `http://127.0.0.1:8765` 后，切换到“周岚 · 采购经理”，进入“供应链风险”，打开航空铝板缺口，随后执行人工补货或 AI 补货建议。
+看到“`Aether AI ERP 已启动`”后，在本机浏览器打开 `http://127.0.0.1:8765`。随后切换到“周岚 · 采购经理”，进入“供应链风险”，打开航空铝板缺口，执行人工补货或 AI 补货建议。
 
 ### Docker 启动
 
@@ -71,9 +69,9 @@ Docker 镜像默认开启 `PUBLIC_DEMO=true`：访客可以切换虚构角色并
 
 云平台若自动注入 `PORT` 环境变量，容器会读取该端口启动服务。
 
-### Render 一键部署
+### 可选云端部署
 
-仓库根目录的 `render.yaml` 已配置 Docker Web Service、`/api/health` 健康检查和公开演示环境变量。点击上方 **Deploy to Render**，审核免费实例配置后即可创建独立演示地址。
+仓库根目录的 `render.yaml` 提供 Docker Web Service、`/api/health` 健康检查和公开演示环境变量配置。只有在自行创建并完成云端部署后，才会获得独立的在线演示地址；本地使用不受影响。
 
 ## 演示角色
 
